@@ -3,7 +3,7 @@
 from datetime import date as date_type
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Date, Index, Numeric, String, Text, func
+from sqlalchemy import BigInteger, Date, ForeignKey, Index, Numeric, String, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -42,7 +42,7 @@ class Expense(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, index=True
+        BigInteger, ForeignKey("users.telegram_id"), nullable=False, index=True
     )
     amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(10), default="INR")
