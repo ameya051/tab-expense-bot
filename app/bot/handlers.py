@@ -68,21 +68,21 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Welcome message explaining bot usage."""
     await _ensure_user(update)
     welcome = (
-        "👋 *Hey there!* I'm your personal expense tracker\\.\n\n"
+        "👋 <b>Hey there!</b> I'm your personal expense tracker.\n\n"
         "Just tell me what you spent in plain language:\n"
-        '• _"spent ₹500 on groceries"_\n'
-        '• _"₹200 cab yesterday"_\n'
-        '• _"lunch 150"_\n\n'
-        "📊 *Commands:*\n"
-        "/summary — Monthly category breakdown \\(chart \\+ table\\)\n"
+        "• <i>spent ₹500 on groceries</i>\n"
+        "• <i>₹200 cab yesterday</i>\n"
+        "• <i>lunch 150</i>\n\n"
+        "📊 <b>Commands:</b>\n"
+        "/summary — Monthly category breakdown (chart + table)\n"
         "/report — Spending trend over time\n"
         "/delete — Remove your last expense\n\n"
         "You can also ask me things like:\n"
-        '• _"how much this week?"_\n'
-        '• _"show my top categories"_\n'
-        '• _"last 5 expenses"_'
+        "• <i>how much this week?</i>\n"
+        "• <i>show my top categories</i>\n"
+        "• <i>last 5 expenses</i>"
     )
-    await update.message.reply_text(welcome, parse_mode="MarkdownV2")
+    await update.message.reply_text(welcome, parse_mode="HTML")
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +119,7 @@ async def summary_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         # Send both
         await _send_photo_bytes(update, context, chart_bytes)
-        await update.message.reply_text(f"```\n{table_text}\n```", parse_mode="MarkdownV2")
+        await update.message.reply_text(f"<pre>{table_text}</pre>", parse_mode="HTML")
 
     except Exception:
         logger.exception("Error in /summary handler")
@@ -302,7 +302,7 @@ async def _handle_query(
             )
             table_text = tables.format_summary_table(data, total, period_label)
             await _send_photo_bytes(update, context, chart_bytes)
-            await update.message.reply_text(f"```\n{table_text}\n```", parse_mode="MarkdownV2")
+            await update.message.reply_text(f"<pre>{table_text}</pre>", parse_mode="HTML")
             return
 
         # Group by day → trend line chart
