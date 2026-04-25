@@ -17,7 +17,10 @@ class Settings(BaseSettings):
     webhook_base_url: str = ""  # Only required in webhook mode
     webhook_secret: str = "default-secret"
     groq_model: str = "llama-3.3-70b-versatile"
+    whisper_model: str = "whisper-large-v3"
     mode: Literal["polling", "webhook"] = "polling"
+    default_currency: str = "INR"
+    frankfurter_api_url: str = "https://api.frankfurter.dev/v1"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

@@ -9,6 +9,7 @@ from telegram import Update
 
 from app.bot.setup import create_bot_application
 from app.config import settings
+from app.scheduler import recurring_expense_loop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,6 +25,10 @@ bot_app = create_bot_application(settings.telegram_bot_token)
 async def lifespan(app: FastAPI):
     """Manage bot lifecycle — startup and shutdown."""
     await bot_app.initialize()
+
+    # Start the recurring expense scheduler as a background task
+    scheduler_task = asyncio.create_task(recurring_expense_loop(bot_app))
+    logger.info("Recurring expense scheduler task created")
 
     if settings.mode == "webhook":
         webhook_url = f"{settings.webhook_base_url}/webhook"
@@ -51,6 +56,13 @@ async def lifespan(app: FastAPI):
         if bot_app.updater.running:
             await bot_app.updater.stop()
         await bot_app.stop()
+
+    # Cancel the scheduler
+    scheduler_task.cancel()
+    try:
+        await scheduler_task
+    except asyncio.CancelledError:
+        pass
 
     await bot_app.shutdown()
 

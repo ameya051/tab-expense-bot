@@ -1,8 +1,8 @@
-"""User service — upsert logic for Telegram users."""
+"""User service — upsert logic and preference management for Telegram users."""
 
 from datetime import datetime
 
-from sqlalchemy import insert
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +31,37 @@ async def upsert_user(
             "first_name": stmt.excluded.first_name,
             "username": stmt.excluded.username,
         },
+    )
+    await db.execute(stmt)
+    await db.commit()
+
+
+async def get_user(db: AsyncSession, telegram_id: int) -> User | None:
+    """Fetch a user by their Telegram ID, or None if not found."""
+    stmt = select(User).where(User.telegram_id == telegram_id)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def update_preferred_currency(
+    db: AsyncSession, telegram_id: int, currency: str
+) -> None:
+    """Update a user's preferred currency."""
+    stmt = (
+        update(User)
+        .where(User.telegram_id == telegram_id)
+        .values(preferred_currency=currency.upper())
+    )
+    await db.execute(stmt)
+    await db.commit()
+
+
+async def mark_onboarding_complete(db: AsyncSession, telegram_id: int) -> None:
+    """Mark the user's onboarding as complete."""
+    stmt = (
+        update(User)
+        .where(User.telegram_id == telegram_id)
+        .values(onboarding_complete=True)
     )
     await db.execute(stmt)
     await db.commit()

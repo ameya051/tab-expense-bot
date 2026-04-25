@@ -41,12 +41,16 @@ async def add_expense(
     expense_date: date,
     currency: str = "INR",
     description: str | None = None,
+    original_amount: float | None = None,
+    original_currency: str | None = None,
 ) -> Expense:
     """Insert a new expense and return the created row."""
     expense = Expense(
         user_id=user_id,
         amount=amount,
         currency=currency,
+        original_amount=original_amount,
+        original_currency=original_currency,
         category=category.lower(),
         date=expense_date,
         description=description,

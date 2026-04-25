@@ -17,6 +17,7 @@ class LogExpenseIntent(BaseModel):
     category: str
     date: date
     description: str | None = None
+    recurring: bool = False
 
 
 class QueryIntent(BaseModel):

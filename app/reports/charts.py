@@ -13,6 +13,8 @@ matplotlib.use("AGG")  # Non-interactive backend — must be set before pyplot i
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
+from app.services.currency_service import get_currency_symbol
+
 
 # ---------------------------------------------------------------------------
 # Shared style constants
@@ -49,12 +51,14 @@ def _apply_base_style(fig: plt.Figure, ax: plt.Axes) -> None:
 def generate_category_bar_chart(
     data: list[dict],
     period_label: str = "This Month",
+    currency: str = "INR",
 ) -> bytes:
     """Generate a horizontal bar chart of spending by category.
 
     Args:
         data: List of {"category": str, "total": float} dicts, sorted desc.
         period_label: Label for the chart title (e.g. "April 2026").
+        currency: Currency code for axis labels.
 
     Returns:
         PNG image as raw bytes.
@@ -62,6 +66,7 @@ def generate_category_bar_chart(
     if not data:
         return _empty_chart("No expenses to show")
 
+    symbol = get_currency_symbol(currency)
     categories = [d["category"].title() for d in reversed(data)]
     amounts = [d["total"] for d in reversed(data)]
     colors = [ACCENT_COLORS[i % len(ACCENT_COLORS)] for i in range(len(categories))]
@@ -76,7 +81,7 @@ def generate_category_bar_chart(
         ax.text(
             bar.get_width() + max(amounts) * 0.02,
             bar.get_y() + bar.get_height() / 2,
-            f"₹{amount:,.2f}",
+            f"{symbol}{amount:,.2f}",
             va="center",
             ha="left",
             color=TEXT_COLOR,
@@ -91,7 +96,7 @@ def generate_category_bar_chart(
         fontweight="bold",
         pad=15,
     )
-    ax.set_xlabel("Amount (₹)", color=TEXT_COLOR, fontsize=11)
+    ax.set_xlabel(f"Amount ({symbol})", color=TEXT_COLOR, fontsize=11)
 
     fig.tight_layout(pad=2)
     return _fig_to_bytes(fig)
@@ -104,12 +109,14 @@ def generate_category_bar_chart(
 def generate_trend_line_chart(
     data: list[dict],
     period_label: str = "This Month",
+    currency: str = "INR",
 ) -> bytes:
     """Generate a line chart showing daily spending trend.
 
     Args:
         data: List of {"date": date, "total": float} dicts, sorted chronologically.
         period_label: Label for the chart title.
+        currency: Currency code for axis labels.
 
     Returns:
         PNG image as raw bytes.
@@ -117,6 +124,7 @@ def generate_trend_line_chart(
     if not data:
         return _empty_chart("No expenses to show")
 
+    symbol = get_currency_symbol(currency)
     dates = [d["date"] for d in data]
     amounts = [d["total"] for d in data]
 
@@ -146,7 +154,7 @@ def generate_trend_line_chart(
         pad=15,
     )
     ax.set_xlabel("Date", color=TEXT_COLOR, fontsize=11)
-    ax.set_ylabel("Amount (₹)", color=TEXT_COLOR, fontsize=11)
+    ax.set_ylabel(f"Amount ({symbol})", color=TEXT_COLOR, fontsize=11)
 
     # Format x-axis dates
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))

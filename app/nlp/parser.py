@@ -20,11 +20,24 @@ For logging expenses, return:
 {{
   "intent": "log_expense",
   "amount": <number>,
-  "currency": "INR",
+  "currency": "{default_currency}",
   "category": "<category — free-form, lowercase, e.g. food, transport, groceries>",
   "date": "<YYYY-MM-DD>",
-  "description": "<brief description or null>"
+  "description": "<brief description or null>",
+  "recurring": false
 }}
+
+Currency detection:
+- $ → USD, € → EUR, £ → GBP, ¥ → JPY, ₹ → INR
+- If the user mentions a currency symbol or code, use the corresponding ISO 4217 code.
+- If no currency is mentioned, default to "{default_currency}".
+
+Recurring expenses:
+- If the user indicates this is a recurring, monthly, or subscription expense, \
+set "recurring": true.
+- Look for keywords: "recurring", "monthly", "every month", "subscription", \
+"auto-pay", "repeat".
+- Default is false.
 
 For queries about spending, return:
 {{
@@ -62,20 +75,24 @@ class NLPParser:
         self.client = Groq(api_key=api_key)
         self.model = model
 
-    async def parse(self, text: str) -> ParsedIntent:
+    async def parse(self, text: str, default_currency: str = "INR") -> ParsedIntent:
         """Parse user text into a structured intent (runs Groq call in threadpool)."""
         try:
-            raw_json = await run_in_threadpool(self._call_groq, text)
+            raw_json = await run_in_threadpool(
+                self._call_groq, text, default_currency
+            )
             parsed = json.loads(raw_json)
             return _intent_adapter.validate_python(parsed)
         except Exception:
             logger.exception("NLP parsing failed for text: %s", text)
             return UnknownIntent(intent="unknown")
 
-    def _call_groq(self, text: str) -> str:
+    def _call_groq(self, text: str, default_currency: str) -> str:
         """Synchronous Groq API call — meant to be run via run_in_threadpool."""
         today = date.today().isoformat()
-        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(today=today)
+        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
+            today=today, default_currency=default_currency
+        )
 
         completion = self.client.chat.completions.create(
             model=self.model,
