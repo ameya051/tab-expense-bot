@@ -187,7 +187,7 @@ async def delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # ---------------------------------------------------------------------------
 
 async def budget_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Set or view category budgets."""
+    """Set or view budgets - user-level total or category-specific."""
     await _ensure_user(update)
     user_id = update.effective_user.id
     pref_currency = await _get_preferred_currency(user_id)
@@ -195,55 +195,126 @@ async def budget_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     try:
         if args and len(args) >= 2:
-            # Set budget: /budget food 5000
+            # Set category budget: /budget food 5000
             category = args[0].lower()
+            # Validate category is not a number (to distinguish from user budget)
+            try:
+                float(category)
+                # If it parses as a number, treat as user budget with invalid syntax
+                await update.message.reply_text(
+                    "❌ Usage: /budget <amount> — for user total budget\n"
+                    "       /budget <category> <amount> — for category budget\n"
+                    "Examples:\n"
+                    "• /budget 20000 — set total monthly budget to 20000\n"
+                    "• /budget food 5000 — set food budget to 5000"
+                )
+                return
+            except ValueError:
+                pass  # It's a valid category name
+
             try:
                 limit = float(args[1])
             except ValueError:
                 await update.message.reply_text(
-                    "❌ Usage: /budget <category> <amount>\n"
+                    "❌ Amount must be a number.\n"
                     "Example: /budget food 5000"
                 )
                 return
 
             async with AsyncSessionLocal() as db:
-                await budget_service.set_budget(db, user_id, category, limit)
+                await budget_service.set_budget(db, user_id, limit, category=category)
 
             emoji = tables._get_emoji(category)
             await update.message.reply_text(
                 f"✅ Budget set: {emoji} {category.title()} — "
                 f"{_format_amount(limit, pref_currency)}/month"
             )
-        else:
-            # View all budgets
-            async with AsyncSessionLocal() as db:
-                budgets = await budget_service.get_budgets(db, user_id)
 
-                if not budgets:
+        elif args and len(args) == 1:
+            # Set user-level total budget: /budget 20000
+            try:
+                limit = float(args[0])
+            except ValueError:
+                await update.message.reply_text(
+                    "❌ Amount must be a number.\n"
+                    "Example: /budget 20000 — set total monthly budget"
+                )
+                return
+
+            async with AsyncSessionLocal() as db:
+                await budget_service.set_budget(db, user_id, limit, category=None)
+
+            await update.message.reply_text(
+                f"✅ Total monthly budget set: {_format_amount(limit, pref_currency)}"
+            )
+
+        else:
+            # View all budgets (user total + categories)
+            async with AsyncSessionLocal() as db:
+                user_budget = await budget_service.get_user_budget(db, user_id)
+                cat_budgets = await budget_service.get_budgets(db, user_id)
+
+                if not user_budget and not cat_budgets:
                     await update.message.reply_text(
                         "📋 No budgets set yet.\n\n"
-                        "Set one with: /budget <category> <amount>\n"
-                        "Example: /budget food 5000"
+                        "Set budgets with:\n"
+                        "• /budget <amount> — set total monthly budget\n"
+                        "• /budget <category> <amount> — set category budget\n\n"
+                        "Examples:\n"
+                        "• /budget 20000\n"
+                        "• /budget food 5000"
                     )
                     return
 
-                # Get spending for each budget's category
-                budgets_with_spending = []
+                # Build display text
+                lines = ["📊 <b>Your Budgets</b>\n"]
                 from datetime import date
-                month_start = date.today().replace(day=1)
                 today = date.today()
+                month_start = today.replace(day=1)
 
-                for b in budgets:
-                    result = await budget_service.check_budget(db, user_id, b.category)
-                    budgets_with_spending.append({
-                        "category": b.category,
-                        "limit": float(b.monthly_limit),
-                        "spent": result["spent"] if result else 0,
-                        "percent": result["percent"] if result else 0,
-                    })
+                # User-level total budget
+                if user_budget:
+                    user_budget_info = await budget_service.check_user_budget(db, user_id)
+                    if user_budget_info:
+                        spent = user_budget_info["spent"]
+                        limit = user_budget_info["budget"]
+                        pct = user_budget_info["percent"]
+                        status_emoji = "🟢" if pct < 80 else "🟡" if pct < 100 else "🔴"
+                        lines.append(
+                            f"\n💰 <b>Total Monthly Budget</b>\n"
+                            f"{status_emoji} {_format_amount(spent, pref_currency)} / "
+                            f"{_format_amount(limit, pref_currency)} ({pct}%)"
+                        )
+                    else:
+                        lines.append(
+                            f"\n💰 <b>Total Monthly Budget</b>: "
+                            f"{_format_amount(float(user_budget.monthly_limit), pref_currency)}"
+                        )
 
-            text = tables.format_budget_overview(budgets_with_spending, pref_currency)
-            await update.message.reply_text(text)
+                # Category budgets
+                if cat_budgets:
+                    lines.append("\n<b>Category Budgets</b>")
+                    for b in cat_budgets:
+                        result = await budget_service.check_budget(db, user_id, b.category)
+                        if result:
+                            spent = result["spent"]
+                            limit = result["budget"]
+                            pct = result["percent"]
+                            status_emoji = "🟢" if pct < 80 else "🟡" if pct < 100 else "🔴"
+                            emoji = tables._get_emoji(b.category)
+                            lines.append(
+                                f"{emoji} {b.category.title()}: "
+                                f"{status_emoji} {_format_amount(spent, pref_currency)} / "
+                                f"{_format_amount(limit, pref_currency)} ({pct}%)"
+                            )
+                        else:
+                            emoji = tables._get_emoji(b.category)
+                            lines.append(
+                                f"{emoji} {b.category.title()}: "
+                                f"{_format_amount(float(b.monthly_limit), pref_currency)}"
+                            )
+
+                await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
     except Exception:
         logger.exception("Error in /budget handler")
@@ -597,7 +668,7 @@ async def _handle_log_expense(
         suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
         parts.append(f"🔄 Marked as recurring! I'll auto-log this on the {day}{suffix} of every month.")
 
-    # Check budget alert
+    # Check category budget alert
     async with AsyncSessionLocal() as db:
         budget_info = await budget_service.check_budget(db, user_id, expense.category)
 
@@ -621,6 +692,38 @@ async def _handle_log_expense(
                 f"ℹ️ {expense.category.title()} budget: {pct}% used "
                 f"({spent_fmt}/{limit_fmt})"
             )
+
+    # Check user-level total budget alert (only if category check didn't already trigger a danger alert)
+    async with AsyncSessionLocal() as db:
+        user_budget_info = await budget_service.check_user_budget(db, user_id)
+
+    if user_budget_info and user_budget_info["alert_level"]:
+        # Only show user total alert if it would add new information
+        # (i.e., category budget didn't already show a danger alert)
+        show_user_alert = True
+        if budget_info and budget_info["alert_level"] == "danger":
+            show_user_alert = False
+
+        if show_user_alert:
+            spent_fmt = _format_amount(user_budget_info["spent"], pref_currency)
+            limit_fmt = _format_amount(user_budget_info["budget"], pref_currency)
+            pct = user_budget_info["percent"]
+
+            if user_budget_info["alert_level"] == "danger":
+                parts.append(
+                    f"🚨💰 TOTAL monthly budget EXCEEDED! "
+                    f"{spent_fmt}/{limit_fmt} ({pct}%)"
+                )
+            elif user_budget_info["alert_level"] == "warning":
+                parts.append(
+                    f"⚠️💰 You've used {pct}% of your TOTAL monthly budget "
+                    f"({spent_fmt}/{limit_fmt})"
+                )
+            elif user_budget_info["alert_level"] == "info":
+                parts.append(
+                    f"ℹ️💰 TOTAL monthly budget: {pct}% used "
+                    f"({spent_fmt}/{limit_fmt})"
+                )
 
     return "\n".join(parts)
 

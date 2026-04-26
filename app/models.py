@@ -107,7 +107,7 @@ class RecurringExpense(Base):
 
 
 class Budget(Base):
-    """A monthly budget limit for a specific category."""
+    """A monthly budget limit - either user-level total (category=None) or category-specific."""
 
     __tablename__ = "budgets"
     __table_args__ = (
@@ -118,14 +118,15 @@ class Budget(Base):
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.telegram_id"), nullable=False, index=True
     )
-    category: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str | None] = mapped_column(Text, nullable=True)  # NULL = user-level total budget
     monthly_limit: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=func.now())
 
     user: Mapped["User"] = relationship()
 
     def __repr__(self) -> str:
+        cat_label = self.category or "TOTAL"
         return (
-            f"<Budget id={self.id} category={self.category} "
+            f"<Budget id={self.id} category={cat_label} "
             f"limit={self.monthly_limit}>"
         )
