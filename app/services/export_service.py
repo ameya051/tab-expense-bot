@@ -40,27 +40,31 @@ async def generate_csv(
     writer = csv.writer(string_buf)
 
     # Header row
-    writer.writerow([
-        "Date",
-        "Category",
-        "Amount",
-        "Currency",
-        "Original Amount",
-        "Original Currency",
-        "Description",
-    ])
+    writer.writerow(
+        [
+            "Date",
+            "Category",
+            "Amount",
+            "Currency",
+            "Original Amount",
+            "Original Currency",
+            "Description",
+        ]
+    )
 
     # Data rows
     for exp in expenses:
-        writer.writerow([
-            exp.date.isoformat(),
-            exp.category.title(),
-            f"{exp.amount:.2f}",
-            exp.currency,
-            f"{exp.original_amount:.2f}" if exp.original_amount else "",
-            exp.original_currency or "",
-            exp.description or "",
-        ])
+        writer.writerow(
+            [
+                exp.date.isoformat(),
+                exp.category.title(),
+                f"{exp.amount:.2f}",
+                exp.currency,
+                f"{exp.original_amount:.2f}" if exp.original_amount else "",
+                exp.original_currency or "",
+                exp.description or "",
+            ]
+        )
 
     string_buf.seek(0)
     csv_bytes = string_buf.getvalue().encode("utf-8")

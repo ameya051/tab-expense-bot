@@ -59,12 +59,8 @@ class Expense(Base):
     )
     amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(10), default="INR")
-    original_amount: Mapped[float | None] = mapped_column(
-        Numeric(10, 2), nullable=True
-    )
-    original_currency: Mapped[str | None] = mapped_column(
-        String(10), nullable=True
-    )
+    original_amount: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    original_currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
     category: Mapped[str] = mapped_column(Text, nullable=False)
     date: Mapped[date_type] = mapped_column(Date, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -80,9 +76,7 @@ class RecurringExpense(Base):
     """A recurring expense that the bot auto-logs monthly."""
 
     __tablename__ = "recurring_expenses"
-    __table_args__ = (
-        Index("ix_recurring_active_next_run", "active", "next_run_date"),
-    )
+    __table_args__ = (Index("ix_recurring_active_next_run", "active", "next_run_date"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
@@ -110,15 +104,14 @@ class Budget(Base):
     """A monthly budget limit - either user-level total (category=None) or category-specific."""
 
     __tablename__ = "budgets"
-    __table_args__ = (
-        Index("ix_budgets_user_category", "user_id", "category", unique=True),
-    )
+    __table_args__ = (Index("ix_budgets_user_category", "user_id", "category", unique=True),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.telegram_id"), nullable=False, index=True
     )
-    category: Mapped[str | None] = mapped_column(Text, nullable=True)  # NULL = user-level total budget
+    # NULL = user-level total budget
+    category: Mapped[str | None] = mapped_column(Text, nullable=True)
     monthly_limit: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=func.now())
 
@@ -126,7 +119,4 @@ class Budget(Base):
 
     def __repr__(self) -> str:
         cat_label = self.category or "TOTAL"
-        return (
-            f"<Budget id={self.id} category={cat_label} "
-            f"limit={self.monthly_limit}>"
-        )
+        return f"<Budget id={self.id} category={cat_label} limit={self.monthly_limit}>"

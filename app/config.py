@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     webhook_secret: str = "default-secret"
     groq_model: str = "llama-3.3-70b-versatile"
     whisper_model: str = "whisper-large-v3"
+    llm_provider: Literal["groq", "openai", "anthropic"] = "groq"
+    openai_model: str = "gpt-4o-mini"
+    anthropic_model: str = "claude-sonnet-4-20250514"
+    openai_api_key: str | None = None
+    anthropic_api_key: str | None = None
     mode: Literal["polling", "webhook"] = "polling"
     default_currency: str = "INR"
     frankfurter_api_url: str = "https://api.frankfurter.dev/v1"

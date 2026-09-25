@@ -5,16 +5,15 @@ from async handlers to avoid blocking the event loop.
 """
 
 import io
-from datetime import date
 
 import matplotlib
+
 matplotlib.use("AGG")  # Non-interactive backend — must be set before pyplot import
 
-import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
 
 from app.services.currency_service import get_currency_symbol
-
 
 # ---------------------------------------------------------------------------
 # Shared style constants
@@ -24,9 +23,18 @@ BG_COLOR = "#1a1a2e"
 CARD_COLOR = "#16213e"
 TEXT_COLOR = "#e0e0e0"
 ACCENT_COLORS = [
-    "#e94560", "#0f3460", "#533483", "#48c9b0",
-    "#f39c12", "#e74c3c", "#3498db", "#2ecc71",
-    "#9b59b6", "#1abc9c", "#e67e22", "#34495e",
+    "#e94560",
+    "#0f3460",
+    "#533483",
+    "#48c9b0",
+    "#f39c12",
+    "#e74c3c",
+    "#3498db",
+    "#2ecc71",
+    "#9b59b6",
+    "#1abc9c",
+    "#e67e22",
+    "#34495e",
 ]
 GRID_COLOR = "#2a2a4a"
 
@@ -47,6 +55,7 @@ def _apply_base_style(fig: plt.Figure, ax: plt.Axes) -> None:
 # ---------------------------------------------------------------------------
 # Category bar chart
 # ---------------------------------------------------------------------------
+
 
 def generate_category_bar_chart(
     data: list[dict],
@@ -77,7 +86,7 @@ def generate_category_bar_chart(
     bars = ax.barh(categories, amounts, color=colors, height=0.6, edgecolor="none")
 
     # Add value labels on bars
-    for bar, amount in zip(bars, amounts):
+    for bar, amount in zip(bars, amounts, strict=False):
         ax.text(
             bar.get_width() + max(amounts) * 0.02,
             bar.get_y() + bar.get_height() / 2,
@@ -105,6 +114,7 @@ def generate_category_bar_chart(
 # ---------------------------------------------------------------------------
 # Trend line chart
 # ---------------------------------------------------------------------------
+
 
 def generate_trend_line_chart(
     data: list[dict],
@@ -169,6 +179,7 @@ def generate_trend_line_chart(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _fig_to_bytes(fig: plt.Figure) -> bytes:
     """Render a matplotlib figure to PNG bytes and close it."""
     buf = io.BytesIO()
@@ -183,10 +194,14 @@ def _empty_chart(message: str) -> bytes:
     fig, ax = plt.subplots(figsize=(8, 4), dpi=150)
     _apply_base_style(fig, ax)
     ax.text(
-        0.5, 0.5, message,
+        0.5,
+        0.5,
+        message,
         transform=ax.transAxes,
-        ha="center", va="center",
-        color=TEXT_COLOR, fontsize=16,
+        ha="center",
+        va="center",
+        color=TEXT_COLOR,
+        fontsize=16,
     )
     ax.set_xticks([])
     ax.set_yticks([])

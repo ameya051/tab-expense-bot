@@ -2,11 +2,12 @@
 
 import asyncio
 import logging
-from datetime import datetime, time as dt_time, timedelta, timezone
+from datetime import datetime, timedelta, timezone
+from datetime import time as dt_time
 
 from app.database import AsyncSessionLocal
-from app.services import expense_service, recurring_service
 from app.reports.tables import _get_emoji
+from app.services import expense_service, recurring_service
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ async def _process_due_expenses(bot_app) -> None:
             try:
                 # Log the expense
                 async with AsyncSessionLocal() as db:
-                    expense = await expense_service.add_expense(
+                    await expense_service.add_expense(
                         db,
                         user_id=entry.user_id,
                         amount=float(entry.amount),
@@ -117,9 +118,7 @@ async def _process_due_expenses(bot_app) -> None:
                 )
 
             except Exception:
-                logger.exception(
-                    "Failed to process recurring expense #%d", entry.id
-                )
+                logger.exception("Failed to process recurring expense #%d", entry.id)
 
     except Exception:
         logger.exception("Failed to query due recurring expenses")

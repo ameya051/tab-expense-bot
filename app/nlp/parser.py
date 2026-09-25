@@ -78,9 +78,7 @@ class NLPParser:
     async def parse(self, text: str, default_currency: str = "INR") -> ParsedIntent:
         """Parse user text into a structured intent (runs Groq call in threadpool)."""
         try:
-            raw_json = await run_in_threadpool(
-                self._call_groq, text, default_currency
-            )
+            raw_json = await run_in_threadpool(self._call_groq, text, default_currency)
             parsed = json.loads(raw_json)
             return _intent_adapter.validate_python(parsed)
         except Exception:

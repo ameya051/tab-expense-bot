@@ -25,11 +25,7 @@ from app.bot.onboarding import build_onboarding_handler
 
 def create_bot_application(token: str) -> Application:
     """Build the PTB Application with all handlers registered."""
-    app = (
-        ApplicationBuilder()
-        .token(token)
-        .build()
-    )
+    app = ApplicationBuilder().token(token).build()
 
     # Onboarding ConversationHandler (/start + /settings) — must be first
     app.add_handler(build_onboarding_handler())
@@ -43,16 +39,12 @@ def create_bot_application(token: str) -> Application:
     app.add_handler(CommandHandler("export", export_handler))
 
     # Callback query handler for cancel recurring buttons
-    app.add_handler(
-        CallbackQueryHandler(cancel_recurring_callback, pattern=r"^cancel_recurring:")
-    )
+    app.add_handler(CallbackQueryHandler(cancel_recurring_callback, pattern=r"^cancel_recurring:"))
 
     # Voice message handler
     app.add_handler(MessageHandler(filters.VOICE, voice_handler))
 
     # Free-text handler — must be last (catch-all)
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler)
-    )
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 
     return app

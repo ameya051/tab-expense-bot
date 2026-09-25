@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -45,6 +45,15 @@ class UnknownIntent(BaseModel):
 
 # Discriminated union — Pydantic picks the right subtype based on the "intent" field
 ParsedIntent = Annotated[
-    Union[LogExpenseIntent, QueryIntent, DeleteIntent, UnknownIntent],
+    LogExpenseIntent | QueryIntent | DeleteIntent | UnknownIntent,
     Field(discriminator="intent"),
 ]
+
+
+# Some LLM tool-calling APIs cannot accept a union directly, so the graph's
+# structured output targets this single-object envelope instead; the union
+# inside is still validated by the discriminator.
+class IntentEnvelope(BaseModel):
+    """Single-object wrapper bundling a ParsedIntent for structured output."""
+
+    intent_union: ParsedIntent

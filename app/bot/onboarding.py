@@ -47,6 +47,7 @@ async def _ensure_user(update: Update) -> None:
 # /start — entry point
 # ---------------------------------------------------------------------------
 
+
 async def start_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Welcome message and currency picker."""
     await _ensure_user(update)
@@ -88,6 +89,7 @@ async def start_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 # Currency selection callback
 # ---------------------------------------------------------------------------
 
+
 async def currency_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle currency button press."""
     query = update.callback_query
@@ -106,9 +108,7 @@ async def currency_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     return await _save_currency_and_finish(query, context, choice)
 
 
-async def custom_currency_entered(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
+async def custom_currency_entered(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle free-text currency code input."""
     code = update.message.text.strip().upper()
 
@@ -148,8 +148,14 @@ async def _save_currency_and_finish(query, context, code: str) -> int:
 def _finish_message(code: str) -> str:
     """Build the onboarding completion message."""
     flags = {
-        "INR": "🇮🇳", "USD": "🇺🇸", "EUR": "🇪🇺", "GBP": "🇬🇧",
-        "JPY": "🇯🇵", "CAD": "🇨🇦", "AUD": "🇦🇺", "CHF": "🇨🇭",
+        "INR": "🇮🇳",
+        "USD": "🇺🇸",
+        "EUR": "🇪🇺",
+        "GBP": "🇬🇧",
+        "JPY": "🇯🇵",
+        "CAD": "🇨🇦",
+        "AUD": "🇦🇺",
+        "CHF": "🇨🇭",
     }
     flag = flags.get(code, "🌍")
 
@@ -174,6 +180,7 @@ def _finish_message(code: str) -> str:
 # /skip — use defaults
 # ---------------------------------------------------------------------------
 
+
 async def skip_onboarding(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Skip onboarding and use default settings."""
     await _ensure_user(update)
@@ -193,9 +200,8 @@ async def skip_onboarding(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 # /settings — change currency (reuses the currency picker)
 # ---------------------------------------------------------------------------
 
-async def settings_handler(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
+
+async def settings_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Let the user change their preferred currency."""
     await _ensure_user(update)
     async with AsyncSessionLocal() as db:
@@ -212,8 +218,7 @@ async def settings_handler(
     ]
 
     await update.message.reply_text(
-        f"⚙️ Current currency: <b>{current}</b>\n\n"
-        "Pick a new one:",
+        f"⚙️ Current currency: <b>{current}</b>\n\nPick a new one:",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
@@ -224,6 +229,7 @@ async def settings_handler(
 # Build the ConversationHandler
 # ---------------------------------------------------------------------------
 
+
 def build_onboarding_handler() -> ConversationHandler:
     """Create the ConversationHandler for /start onboarding."""
     return ConversationHandler(
@@ -233,14 +239,10 @@ def build_onboarding_handler() -> ConversationHandler:
         ],
         states={
             CHOOSE_CURRENCY: [
-                CallbackQueryHandler(
-                    currency_chosen, pattern=r"^currency:"
-                ),
+                CallbackQueryHandler(currency_chosen, pattern=r"^currency:"),
             ],
             CUSTOM_CURRENCY: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND, custom_currency_entered
-                ),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, custom_currency_entered),
             ],
         },
         fallbacks=[

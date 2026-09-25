@@ -50,6 +50,7 @@ def _get_emoji(category: str) -> str:
 # Summary table
 # ---------------------------------------------------------------------------
 
+
 def format_summary_table(
     data: list[dict],
     total: float,
@@ -98,6 +99,7 @@ def format_summary_table(
 # Recent expenses list
 # ---------------------------------------------------------------------------
 
+
 def format_recent_expenses(
     expenses: list[Expense],
     currency: str = "INR",
@@ -138,6 +140,7 @@ def format_recent_expenses(
 # ---------------------------------------------------------------------------
 # Budget overview
 # ---------------------------------------------------------------------------
+
 
 def format_budget_overview(
     budgets_with_spending: list[dict],

@@ -2,9 +2,9 @@
 
 import calendar
 import logging
-from datetime import date, timedelta
+from datetime import date
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import RecurringExpense
@@ -69,15 +69,13 @@ async def create_recurring(
     return recurring
 
 
-async def get_user_recurring(
-    db: AsyncSession, user_id: int
-) -> list[RecurringExpense]:
+async def get_user_recurring(db: AsyncSession, user_id: int) -> list[RecurringExpense]:
     """Return all active recurring expenses for a user."""
     stmt = (
         select(RecurringExpense)
         .where(
             RecurringExpense.user_id == user_id,
-            RecurringExpense.active == True,
+            RecurringExpense.active.is_(True),
         )
         .order_by(RecurringExpense.next_run_date)
     )
@@ -92,7 +90,7 @@ async def cancel_recurring(
     stmt = select(RecurringExpense).where(
         RecurringExpense.id == recurring_id,
         RecurringExpense.user_id == user_id,
-        RecurringExpense.active == True,
+        RecurringExpense.active.is_(True),
     )
     result = await db.execute(stmt)
     recurring = result.scalar_one_or_none()
@@ -113,7 +111,7 @@ async def get_due_expenses(db: AsyncSession) -> list[RecurringExpense]:
     stmt = (
         select(RecurringExpense)
         .where(
-            RecurringExpense.active == True,
+            RecurringExpense.active.is_(True),
             RecurringExpense.next_run_date <= today,
         )
         .order_by(RecurringExpense.next_run_date)
@@ -131,9 +129,7 @@ async def advance_next_run(db: AsyncSession, recurring_id: int) -> None:
     if recurring is None:
         return
 
-    recurring.next_run_date = _next_month_date(
-        recurring.next_run_date, recurring.day_of_month
-    )
+    recurring.next_run_date = _next_month_date(recurring.next_run_date, recurring.day_of_month)
     await db.commit()
     logger.info(
         "Advanced recurring #%d next_run_date to %s",

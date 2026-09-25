@@ -46,9 +46,7 @@ async def lifespan(app: FastAPI):
         logger.info("Bot running in POLLING mode")
 
         # Start polling in background (non-blocking)
-        polling_task = asyncio.create_task(
-            bot_app.updater.start_polling(drop_pending_updates=True)
-        )
+        asyncio.create_task(bot_app.updater.start_polling(drop_pending_updates=True))
 
         yield
 
@@ -74,6 +72,7 @@ app = FastAPI(title="Expense Tracker Bot", lifespan=lifespan)
 # Webhook endpoint (only used in webhook mode)
 # ---------------------------------------------------------------------------
 
+
 @app.post("/webhook")
 async def telegram_webhook(request: Request) -> Response:
     """Receive Telegram updates via webhook."""
@@ -91,6 +90,7 @@ async def telegram_webhook(request: Request) -> Response:
 # ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
+
 
 @app.get("/health")
 async def health():

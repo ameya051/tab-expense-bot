@@ -43,9 +43,7 @@ async def get_user(db: AsyncSession, telegram_id: int) -> User | None:
     return result.scalar_one_or_none()
 
 
-async def update_preferred_currency(
-    db: AsyncSession, telegram_id: int, currency: str
-) -> None:
+async def update_preferred_currency(db: AsyncSession, telegram_id: int, currency: str) -> None:
     """Update a user's preferred currency."""
     stmt = (
         update(User)
@@ -58,10 +56,6 @@ async def update_preferred_currency(
 
 async def mark_onboarding_complete(db: AsyncSession, telegram_id: int) -> None:
     """Mark the user's onboarding as complete."""
-    stmt = (
-        update(User)
-        .where(User.telegram_id == telegram_id)
-        .values(onboarding_complete=True)
-    )
+    stmt = update(User).where(User.telegram_id == telegram_id).values(onboarding_complete=True)
     await db.execute(stmt)
     await db.commit()

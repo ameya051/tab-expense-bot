@@ -2,15 +2,15 @@
 
 from datetime import date, timedelta
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Expense
 
-
 # ---------------------------------------------------------------------------
 # Date range helper
 # ---------------------------------------------------------------------------
+
 
 def resolve_date_range(period: str) -> tuple[date, date]:
     """Convert a period string into a concrete (start, end) date range."""
@@ -32,6 +32,7 @@ def resolve_date_range(period: str) -> tuple[date, date]:
 # ---------------------------------------------------------------------------
 # Create
 # ---------------------------------------------------------------------------
+
 
 async def add_expense(
     db: AsyncSession,
@@ -65,6 +66,7 @@ async def add_expense(
 # Delete
 # ---------------------------------------------------------------------------
 
+
 async def delete_last_expense(db: AsyncSession, user_id: int) -> Expense | None:
     """Delete the user's most recent expense. Returns the deleted row or None."""
     # Find the most recent expense
@@ -85,13 +87,9 @@ async def delete_last_expense(db: AsyncSession, user_id: int) -> Expense | None:
     return expense
 
 
-async def delete_expense_by_id(
-    db: AsyncSession, user_id: int, expense_id: int
-) -> Expense | None:
+async def delete_expense_by_id(db: AsyncSession, user_id: int, expense_id: int) -> Expense | None:
     """Delete a specific expense by ID (scoped to user). Returns the deleted row or None."""
-    stmt = select(Expense).where(
-        Expense.id == expense_id, Expense.user_id == user_id
-    )
+    stmt = select(Expense).where(Expense.id == expense_id, Expense.user_id == user_id)
     result = await db.execute(stmt)
     expense = result.scalar_one_or_none()
 
@@ -107,9 +105,8 @@ async def delete_expense_by_id(
 # Query — aggregations
 # ---------------------------------------------------------------------------
 
-async def get_total(
-    db: AsyncSession, user_id: int, start: date, end: date
-) -> float:
+
+async def get_total(db: AsyncSession, user_id: int, start: date, end: date) -> float:
     """Total spending in a date range."""
     stmt = select(func.coalesce(func.sum(Expense.amount), 0)).where(
         Expense.user_id == user_id,
@@ -120,9 +117,7 @@ async def get_total(
     return float(result.scalar_one())
 
 
-async def get_by_category(
-    db: AsyncSession, user_id: int, start: date, end: date
-) -> list[dict]:
+async def get_by_category(db: AsyncSession, user_id: int, start: date, end: date) -> list[dict]:
     """Spending breakdown grouped by category, sorted descending."""
     stmt = (
         select(Expense.category, func.sum(Expense.amount).label("total"))
@@ -138,9 +133,7 @@ async def get_by_category(
     return [{"category": row.category, "total": float(row.total)} for row in result]
 
 
-async def get_daily_trend(
-    db: AsyncSession, user_id: int, start: date, end: date
-) -> list[dict]:
+async def get_daily_trend(db: AsyncSession, user_id: int, start: date, end: date) -> list[dict]:
     """Daily spending trend, ordered chronologically."""
     stmt = (
         select(Expense.date, func.sum(Expense.amount).label("total"))
@@ -174,9 +167,7 @@ async def get_category_total(
     return float(result.scalar_one())
 
 
-async def get_recent(
-    db: AsyncSession, user_id: int, limit: int = 5
-) -> list[Expense]:
+async def get_recent(db: AsyncSession, user_id: int, limit: int = 5) -> list[Expense]:
     """Return the N most recent expenses."""
     stmt = (
         select(Expense)

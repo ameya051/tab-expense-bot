@@ -5,8 +5,6 @@ import logging
 from groq import Groq
 from starlette.concurrency import run_in_threadpool
 
-from app.config import settings
-
 logger = logging.getLogger(__name__)
 
 
@@ -17,9 +15,7 @@ class VoiceTranscriber:
         self.client = Groq(api_key=api_key)
         self.model = model
 
-    async def transcribe(
-        self, audio_bytes: bytes, filename: str = "voice.ogg"
-    ) -> str:
+    async def transcribe(self, audio_bytes: bytes, filename: str = "voice.ogg") -> str:
         """Transcribe audio bytes to text.
 
         Args:
@@ -30,9 +26,7 @@ class VoiceTranscriber:
             Transcribed text string, or empty string on failure.
         """
         try:
-            text = await run_in_threadpool(
-                self._call_whisper, audio_bytes, filename
-            )
+            text = await run_in_threadpool(self._call_whisper, audio_bytes, filename)
             logger.info("Transcribed %d bytes → '%s'", len(audio_bytes), text[:80])
             return text.strip()
         except Exception:

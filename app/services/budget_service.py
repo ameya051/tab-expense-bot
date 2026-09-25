@@ -41,9 +41,7 @@ async def set_budget(
     )
     budget = result.scalar_one()
     cat_label = category or "TOTAL"
-    logger.info(
-        "Budget set: user %d, %s = %.2f", user_id, cat_label, monthly_limit
-    )
+    logger.info("Budget set: user %d, %s = %.2f", user_id, cat_label, monthly_limit)
     return budget
 
 
@@ -88,9 +86,7 @@ async def delete_budget(
     return budget
 
 
-async def check_budget(
-    db: AsyncSession, user_id: int, category: str
-) -> dict | None:
+async def check_budget(db: AsyncSession, user_id: int, category: str) -> dict | None:
     """Check current spending vs. budget for a category this month.
 
     Returns:
@@ -112,9 +108,7 @@ async def check_budget(
     today = date.today()
     month_start = today.replace(day=1)
 
-    spent_stmt = select(
-        func.coalesce(func.sum(Expense.amount), 0)
-    ).where(
+    spent_stmt = select(func.coalesce(func.sum(Expense.amount), 0)).where(
         Expense.user_id == user_id,
         Expense.category == category.lower(),
         Expense.date >= month_start,
@@ -161,9 +155,7 @@ async def check_user_budget(db: AsyncSession, user_id: int) -> dict | None:
     today = date.today()
     month_start = today.replace(day=1)
 
-    spent_stmt = select(
-        func.coalesce(func.sum(Expense.amount), 0)
-    ).where(
+    spent_stmt = select(func.coalesce(func.sum(Expense.amount), 0)).where(
         Expense.user_id == user_id,
         Expense.date >= month_start,
         Expense.date <= today,

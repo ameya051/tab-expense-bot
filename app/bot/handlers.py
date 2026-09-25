@@ -3,31 +3,36 @@
 import io
 import logging
 
+from starlette.concurrency import run_in_threadpool
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
-from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.nlp.parser import NLPParser
 from app.nlp.transcriber import VoiceTranscriber
-from app.schemas import DeleteIntent, LogExpenseIntent, QueryIntent, UnknownIntent
-from app.services import expense_service, user_service, recurring_service, budget_service, export_service
-from app.services.currency_service import currency_service, get_currency_symbol
 from app.reports import charts, tables
+from app.schemas import DeleteIntent, LogExpenseIntent, QueryIntent, UnknownIntent
+from app.services import (
+    budget_service,
+    expense_service,
+    export_service,
+    recurring_service,
+    user_service,
+)
+from app.services.currency_service import currency_service, get_currency_symbol
 
 logger = logging.getLogger(__name__)
 
 # Shared NLP parser and voice transcriber instances
 nlp_parser = NLPParser(api_key=settings.groq_api_key, model=settings.groq_model)
-voice_transcriber = VoiceTranscriber(
-    api_key=settings.groq_api_key, model=settings.whisper_model
-)
+voice_transcriber = VoiceTranscriber(api_key=settings.groq_api_key, model=settings.whisper_model)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 async def _ensure_user(update: Update) -> None:
     """Upsert the user on every interaction."""
@@ -53,6 +58,7 @@ async def _get_preferred_currency(user_id: int) -> str:
 def _get_month_label() -> str:
     """Return a human-readable label like 'April 2026'."""
     from datetime import date
+
     return date.today().strftime("%B %Y")
 
 
@@ -82,6 +88,7 @@ def _format_amount(amount: float, currency: str) -> str:
 # /summary
 # ---------------------------------------------------------------------------
 
+
 async def summary_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send monthly category breakdown as chart + text table."""
     await _ensure_user(update)
@@ -99,7 +106,7 @@ async def summary_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if not data:
             await update.message.reply_text(
                 f"📊 {period_label}\n\nNo expenses recorded yet. "
-                "Send me something like \"spent 200 on food\" to get started!"
+                'Send me something like "spent 200 on food" to get started!'
             )
             return
 
@@ -117,12 +124,15 @@ async def summary_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     except Exception:
         logger.exception("Error in /summary handler")
-        await update.message.reply_text("❌ Something went wrong generating your summary. Please try again.")
+        await update.message.reply_text(
+            "❌ Something went wrong generating your summary. Please try again."
+        )
 
 
 # ---------------------------------------------------------------------------
 # /report
 # ---------------------------------------------------------------------------
+
 
 async def report_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send monthly spending trend as a line chart."""
@@ -147,16 +157,21 @@ async def report_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         chart_bytes = await run_in_threadpool(
             charts.generate_trend_line_chart, data, period_label, pref_currency
         )
-        await _send_photo_bytes(update, context, chart_bytes, caption=f"📈 Spending Trend — {period_label}")
+        await _send_photo_bytes(
+            update, context, chart_bytes, caption=f"📈 Spending Trend — {period_label}"
+        )
 
     except Exception:
         logger.exception("Error in /report handler")
-        await update.message.reply_text("❌ Something went wrong generating your report. Please try again.")
+        await update.message.reply_text(
+            "❌ Something went wrong generating your report. Please try again."
+        )
 
 
 # ---------------------------------------------------------------------------
 # /delete
 # ---------------------------------------------------------------------------
+
 
 async def delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Delete the user's most recent expense."""
@@ -185,6 +200,7 @@ async def delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # ---------------------------------------------------------------------------
 # /budget
 # ---------------------------------------------------------------------------
+
 
 async def budget_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Set or view budgets - user-level total or category-specific."""
@@ -216,8 +232,7 @@ async def budget_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 limit = float(args[1])
             except ValueError:
                 await update.message.reply_text(
-                    "❌ Amount must be a number.\n"
-                    "Example: /budget food 5000"
+                    "❌ Amount must be a number.\nExample: /budget food 5000"
                 )
                 return
 
@@ -236,8 +251,7 @@ async def budget_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 limit = float(args[0])
             except ValueError:
                 await update.message.reply_text(
-                    "❌ Amount must be a number.\n"
-                    "Example: /budget 20000 — set total monthly budget"
+                    "❌ Amount must be a number.\nExample: /budget 20000 — set total monthly budget"
                 )
                 return
 
@@ -268,9 +282,6 @@ async def budget_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
                 # Build display text
                 lines = ["📊 <b>Your Budgets</b>\n"]
-                from datetime import date
-                today = date.today()
-                month_start = today.replace(day=1)
 
                 # User-level total budget
                 if user_budget:
@@ -325,6 +336,7 @@ async def budget_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # /recurring
 # ---------------------------------------------------------------------------
 
+
 async def recurring_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """List active recurring expenses with cancel buttons."""
     await _ensure_user(update)
@@ -363,7 +375,7 @@ async def recurring_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             )
 
         # Arrange cancel buttons in rows of 2
-        keyboard = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+        keyboard = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await update.message.reply_text(
@@ -377,9 +389,7 @@ async def recurring_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("❌ Something went wrong. Please try again.")
 
 
-async def cancel_recurring_callback(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
+async def cancel_recurring_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle cancel recurring expense button press."""
     query = update.callback_query
     await query.answer()
@@ -410,6 +420,7 @@ async def cancel_recurring_callback(
 # /export
 # ---------------------------------------------------------------------------
 
+
 async def export_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Export expenses as a CSV document."""
     await _ensure_user(update)
@@ -432,9 +443,7 @@ async def export_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         start, end = expense_service.resolve_date_range(period)
 
         async with AsyncSessionLocal() as db:
-            csv_bytes, count = await export_service.generate_csv(
-                db, user_id, start, end
-            )
+            csv_bytes, count = await export_service.generate_csv(db, user_id, start, end)
             total = await expense_service.get_total(db, user_id, start, end)
 
         if count == 0:
@@ -443,6 +452,7 @@ async def export_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         # Build filename
         from datetime import date
+
         filename = f"expenses_{date.today().strftime('%Y-%m')}.csv"
         if period == "all_time":
             filename = "expenses_all_time.csv"
@@ -461,12 +471,15 @@ async def export_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     except Exception:
         logger.exception("Error in /export handler")
-        await update.message.reply_text("❌ Something went wrong generating your export. Please try again.")
+        await update.message.reply_text(
+            "❌ Something went wrong generating your export. Please try again."
+        )
 
 
 # ---------------------------------------------------------------------------
 # Voice message handler
 # ---------------------------------------------------------------------------
+
 
 async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Transcribe a voice message and process it as text."""
@@ -521,8 +534,8 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         else:
             await update.message.reply_text(
                 heard_msg + "🤔 I didn't understand that. Try something like:\n"
-                "• \"spent 200 on lunch\"\n"
-                "• \"how much this week?\"",
+                '• "spent 200 on lunch"\n'
+                '• "how much this week?"',
                 parse_mode="HTML",
             )
 
@@ -534,6 +547,7 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 # ---------------------------------------------------------------------------
 # Free-text message handler (the main brain)
 # ---------------------------------------------------------------------------
+
 
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Parse natural language and route to the appropriate action."""
@@ -562,7 +576,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 else:
                     try:
                         expense_id = int(intent.target)
-                        deleted = await expense_service.delete_expense_by_id(db, user_id, expense_id)
+                        deleted = await expense_service.delete_expense_by_id(
+                            db, user_id, expense_id
+                        )
                     except ValueError:
                         deleted = await expense_service.delete_last_expense(db, user_id)
 
@@ -579,9 +595,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         elif isinstance(intent, UnknownIntent):
             await update.message.reply_text(
                 "🤔 I didn't understand that. Try something like:\n"
-                "• \"spent 200 on lunch\"\n"
-                "• \"how much this week?\"\n"
-                "• \"show my top categories\""
+                '• "spent 200 on lunch"\n'
+                '• "how much this week?"\n'
+                '• "show my top categories"'
             )
 
     except Exception:
@@ -592,6 +608,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 # ---------------------------------------------------------------------------
 # Log expense handler (shared between text and voice)
 # ---------------------------------------------------------------------------
+
 
 async def _handle_log_expense(
     update: Update,
@@ -610,9 +627,7 @@ async def _handle_log_expense(
     # Currency conversion if needed
     if stated_currency != pref_currency:
         try:
-            converted, rate = await currency_service.convert(
-                amount, stated_currency, pref_currency
-            )
+            converted, rate = await currency_service.convert(amount, stated_currency, pref_currency)
             original_amount = amount
             original_currency = stated_currency
             amount = converted
@@ -648,14 +663,20 @@ async def _handle_log_expense(
     if original_currency and original_currency != pref_currency:
         orig_formatted = _format_amount(original_amount, original_currency)
         conv_formatted = _format_amount(float(expense.amount), pref_currency)
-        parts = [f"✅ Logged {orig_formatted} (≈ {conv_formatted}) for {emoji} {expense.category.title()} on {date_str}{desc}"]
+        parts = [
+            f"✅ Logged {orig_formatted} (≈ {conv_formatted}) for {emoji} "
+            f"{expense.category.title()} on {date_str}{desc}"
+        ]
     else:
-        parts = [f"✅ Logged {_format_amount(float(expense.amount), pref_currency)} for {emoji} {expense.category.title()} on {date_str}{desc}"]
+        parts = [
+            f"✅ Logged {_format_amount(float(expense.amount), pref_currency)} "
+            f"for {emoji} {expense.category.title()} on {date_str}{desc}"
+        ]
 
     # Handle recurring
     if intent.recurring:
         async with AsyncSessionLocal() as db:
-            recurring = await recurring_service.create_recurring(
+            await recurring_service.create_recurring(
                 db,
                 user_id=user_id,
                 amount=float(expense.amount),
@@ -666,7 +687,9 @@ async def _handle_log_expense(
             )
         day = expense.date.day
         suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
-        parts.append(f"🔄 Marked as recurring! I'll auto-log this on the {day}{suffix} of every month.")
+        parts.append(
+            f"🔄 Marked as recurring! I'll auto-log this on the {day}{suffix} of every month."
+        )
 
     # Check category budget alert
     async with AsyncSessionLocal() as db:
@@ -679,8 +702,7 @@ async def _handle_log_expense(
 
         if budget_info["alert_level"] == "danger":
             parts.append(
-                f"🚨 {expense.category.title()} budget EXCEEDED! "
-                f"{spent_fmt}/{limit_fmt} ({pct}%)"
+                f"🚨 {expense.category.title()} budget EXCEEDED! {spent_fmt}/{limit_fmt} ({pct}%)"
             )
         elif budget_info["alert_level"] == "warning":
             parts.append(
@@ -689,11 +711,11 @@ async def _handle_log_expense(
             )
         elif budget_info["alert_level"] == "info":
             parts.append(
-                f"ℹ️ {expense.category.title()} budget: {pct}% used "
-                f"({spent_fmt}/{limit_fmt})"
+                f"ℹ️ {expense.category.title()} budget: {pct}% used ({spent_fmt}/{limit_fmt})"
             )
 
-    # Check user-level total budget alert (only if category check didn't already trigger a danger alert)
+    # Check user-level total budget alert
+    # (only if category check didn't already trigger a danger alert)
     async with AsyncSessionLocal() as db:
         user_budget_info = await budget_service.check_user_budget(db, user_id)
 
@@ -711,19 +733,14 @@ async def _handle_log_expense(
 
             if user_budget_info["alert_level"] == "danger":
                 parts.append(
-                    f"🚨💰 TOTAL monthly budget EXCEEDED! "
-                    f"{spent_fmt}/{limit_fmt} ({pct}%)"
+                    f"🚨💰 TOTAL monthly budget EXCEEDED! {spent_fmt}/{limit_fmt} ({pct}%)"
                 )
             elif user_budget_info["alert_level"] == "warning":
                 parts.append(
-                    f"⚠️💰 You've used {pct}% of your TOTAL monthly budget "
-                    f"({spent_fmt}/{limit_fmt})"
+                    f"⚠️💰 You've used {pct}% of your TOTAL monthly budget ({spent_fmt}/{limit_fmt})"
                 )
             elif user_budget_info["alert_level"] == "info":
-                parts.append(
-                    f"ℹ️💰 TOTAL monthly budget: {pct}% used "
-                    f"({spent_fmt}/{limit_fmt})"
-                )
+                parts.append(f"ℹ️💰 TOTAL monthly budget: {pct}% used ({spent_fmt}/{limit_fmt})")
 
     return "\n".join(parts)
 
@@ -731,6 +748,7 @@ async def _handle_log_expense(
 # ---------------------------------------------------------------------------
 # Query intent sub-router
 # ---------------------------------------------------------------------------
+
 
 async def _handle_query(
     update: Update,
@@ -791,7 +809,9 @@ async def _handle_query(
             chart_bytes = await run_in_threadpool(
                 charts.generate_trend_line_chart, data, period_label, pref_currency
             )
-            await _send_photo_bytes(update, context, chart_bytes, caption=f"📈 Spending Trend — {period_label}")
+            await _send_photo_bytes(
+                update, context, chart_bytes, caption=f"📈 Spending Trend — {period_label}"
+            )
             return
 
         # Default: show total
