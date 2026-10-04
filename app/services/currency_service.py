@@ -42,6 +42,24 @@ CURRENCY_SYMBOLS: dict[str, str] = {
 
 FALLBACK_SYMBOL = ""
 
+# Currencies the Frankfurter (ECB) API can convert — anything else cannot be
+# used as a preferred currency or converted from.
+SUPPORTED_CURRENCIES: frozenset[str] = frozenset({
+    "AUD", "BGN", "BRL", "CAD", "CHF", "CNY", "CZK", "DKK", "EUR", "GBP",
+    "HKD", "HUF", "IDR", "ILS", "INR", "ISK", "JPY", "KRW", "MXN", "MYR",
+    "NOK", "NZD", "PHP", "PLN", "RON", "SEK", "SGD", "THB", "TRY", "USD",
+    "ZAR",
+})
+
+
+class CurrencyConversionError(Exception):
+    """Raised when an exchange rate cannot be obtained."""
+
+
+def is_supported_currency(code: str) -> bool:
+    """True if the code is a currency we can convert to/from."""
+    return code.upper() in SUPPORTED_CURRENCIES
+
 
 def get_currency_symbol(code: str) -> str:
     """Return the symbol for a currency code, or the code itself as fallback."""
@@ -63,12 +81,16 @@ class CurrencyService:
         """Fetch the live exchange rate from base to target currency.
 
         Uses an in-memory cache with a 5-minute TTL to reduce API calls.
+        Raises CurrencyConversionError if the rate cannot be fetched.
         """
         base = base.upper()
         target = target.upper()
 
         if base == target:
             return 1.0
+
+        if base not in SUPPORTED_CURRENCIES or target not in SUPPORTED_CURRENCIES:
+            raise CurrencyConversionError(f"Unsupported currency pair {base}→{target}")
 
         key = _cache_key(base, target)
         now = time.time()
@@ -93,9 +115,11 @@ class CurrencyService:
                 logger.info("FX rate: 1 %s = %.4f %s", base, rate, target)
                 return rate
 
-        except Exception:
-            logger.exception("Failed to fetch FX rate for %s→%s", base, target)
-            raise
+        except Exception as exc:  # noqa: BLE001 — normalise transport/parse failures
+            logger.warning(
+                "Failed to fetch FX rate for %s→%s: %s", base, target, type(exc).__name__
+            )
+            raise CurrencyConversionError(f"No FX rate for {base}→{target}") from exc
 
     async def convert(
         self, amount: float, from_currency: str, to_currency: str

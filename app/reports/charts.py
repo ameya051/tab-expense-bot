@@ -1,17 +1,19 @@
 """Server-side chart generation using matplotlib.
 
 All functions are synchronous and should be called via run_in_threadpool()
-from async handlers to avoid blocking the event loop.
+from async handlers to avoid blocking the event loop. They use the
+object-oriented Figure API rather than pyplot, whose global figure state is
+not thread-safe when several charts render concurrently.
 """
 
 import io
-from datetime import date
 
 import matplotlib
-matplotlib.use("AGG")  # Non-interactive backend — must be set before pyplot import
+matplotlib.use("AGG")  # Non-interactive backend
 
-import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 
 from app.services.currency_service import get_currency_symbol
 
@@ -31,7 +33,7 @@ ACCENT_COLORS = [
 GRID_COLOR = "#2a2a4a"
 
 
-def _apply_base_style(fig: plt.Figure, ax: plt.Axes) -> None:
+def _apply_base_style(fig: Figure, ax: Axes) -> None:
     """Apply the shared dark theme to a figure."""
     fig.set_facecolor(BG_COLOR)
     ax.set_facecolor(CARD_COLOR)
@@ -71,7 +73,8 @@ def generate_category_bar_chart(
     amounts = [d["total"] for d in reversed(data)]
     colors = [ACCENT_COLORS[i % len(ACCENT_COLORS)] for i in range(len(categories))]
 
-    fig, ax = plt.subplots(figsize=(10, max(4, len(categories) * 0.7)), dpi=150)
+    fig = Figure(figsize=(10, max(4, len(categories) * 0.7)), dpi=150)
+    ax = fig.subplots()
     _apply_base_style(fig, ax)
 
     bars = ax.barh(categories, amounts, color=colors, height=0.6, edgecolor="none")
@@ -90,7 +93,7 @@ def generate_category_bar_chart(
         )
 
     ax.set_title(
-        f"📊 Spending by Category — {period_label}",
+        f"Spending by Category — {period_label}",
         color=TEXT_COLOR,
         fontsize=14,
         fontweight="bold",
@@ -128,7 +131,8 @@ def generate_trend_line_chart(
     dates = [d["date"] for d in data]
     amounts = [d["total"] for d in data]
 
-    fig, ax = plt.subplots(figsize=(10, 6), dpi=150)
+    fig = Figure(figsize=(10, 6), dpi=150)
+    ax = fig.subplots()
     _apply_base_style(fig, ax)
 
     ax.plot(
@@ -147,7 +151,7 @@ def generate_trend_line_chart(
     ax.fill_between(dates, amounts, alpha=0.15, color="#e94560")
 
     ax.set_title(
-        f"📈 Daily Spending Trend — {period_label}",
+        f"Daily Spending Trend — {period_label}",
         color=TEXT_COLOR,
         fontsize=14,
         fontweight="bold",
@@ -169,18 +173,22 @@ def generate_trend_line_chart(
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _fig_to_bytes(fig: plt.Figure) -> bytes:
-    """Render a matplotlib figure to PNG bytes and close it."""
+def _fig_to_bytes(fig: Figure) -> bytes:
+    """Render a matplotlib figure to PNG bytes.
+
+    Figures built with the Figure API are not registered with pyplot, so
+    they are garbage-collected normally — no plt.close() needed.
+    """
     buf = io.BytesIO()
     fig.savefig(buf, format="png", facecolor=fig.get_facecolor(), bbox_inches="tight")
-    plt.close(fig)
     buf.seek(0)
     return buf.getvalue()
 
 
 def _empty_chart(message: str) -> bytes:
     """Generate a simple placeholder chart with a message."""
-    fig, ax = plt.subplots(figsize=(8, 4), dpi=150)
+    fig = Figure(figsize=(8, 4), dpi=150)
+    ax = fig.subplots()
     _apply_base_style(fig, ax)
     ax.text(
         0.5, 0.5, message,

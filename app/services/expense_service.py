@@ -2,10 +2,11 @@
 
 from datetime import date, timedelta
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Expense
+from app.timeutils import today as local_today
 
 
 # ---------------------------------------------------------------------------
@@ -14,7 +15,7 @@ from app.models import Expense
 
 def resolve_date_range(period: str) -> tuple[date, date]:
     """Convert a period string into a concrete (start, end) date range."""
-    today = date.today()
+    today = local_today()
     match period:
         case "today":
             return (today, today)

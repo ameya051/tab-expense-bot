@@ -1,13 +1,13 @@
 """Budget service — set, query, and check user-level and category budgets."""
 
 import logging
-from datetime import date
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Budget, Expense
+from app.timeutils import today as local_today
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ async def check_budget(
         return None
 
     # Get current month spending for this category
-    today = date.today()
+    today = local_today()
     month_start = today.replace(day=1)
 
     spent_stmt = select(
@@ -158,7 +158,7 @@ async def check_user_budget(db: AsyncSession, user_id: int) -> dict | None:
         return None
 
     # Get current month total spending (all categories)
-    today = date.today()
+    today = local_today()
     month_start = today.replace(day=1)
 
     spent_stmt = select(
