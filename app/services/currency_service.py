@@ -42,7 +42,7 @@ CURRENCY_SYMBOLS: dict[str, str] = {
 
 FALLBACK_SYMBOL = ""
 
-# Currencies the Frankfurter (ECB) API can convert — anything else cannot be
+# Currencies the Frankfurter API can convert — anything else cannot be
 # used as a preferred currency or converted from.
 SUPPORTED_CURRENCIES: frozenset[str] = frozenset({
     "AUD", "BGN", "BRL", "CAD", "CHF", "CNY", "CZK", "DKK", "EUR", "GBP",
@@ -102,13 +102,15 @@ class CurrencyService:
                 return rate
 
         # Fetch from API
-        url = f"{self.api_url}/latest?base={base}&symbols={target}"
+        url = f"{self.api_url}/rate/{base}/{target}"
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(url)
                 resp.raise_for_status()
                 data = resp.json()
-                rate = float(data["rates"][target])
+                rate = float(data["rate"])
+                if data.get("quote") != target or rate <= 0:
+                    raise ValueError("unexpected FX rate payload")
 
                 # Cache the result
                 _rate_cache[key] = (rate, now)
