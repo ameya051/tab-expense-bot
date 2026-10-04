@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Date,
     ForeignKey,
     Index,
@@ -28,6 +29,12 @@ class User(Base):
     """Telegram user — identified by their permanent telegram_id."""
 
     __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint(
+            r"preferred_currency ~ '^[A-Z]{3}$'",
+            name="ck_users_preferred_currency_format",
+        ),
+    )
 
     telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     first_name: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -49,6 +56,7 @@ class Expense(Base):
 
     __tablename__ = "expenses"
     __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_expenses_amount_positive"),
         Index("ix_expenses_user_date", "user_id", "date"),
         Index("ix_expenses_user_category", "user_id", "category"),
     )
@@ -81,6 +89,11 @@ class RecurringExpense(Base):
 
     __tablename__ = "recurring_expenses"
     __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_recurring_expenses_amount_positive"),
+        CheckConstraint(
+            "day_of_month BETWEEN 1 AND 31",
+            name="ck_recurring_expenses_day_of_month",
+        ),
         Index("ix_recurring_active_next_run", "active", "next_run_date"),
     )
 
@@ -111,7 +124,17 @@ class Budget(Base):
 
     __tablename__ = "budgets"
     __table_args__ = (
-        Index("ix_budgets_user_category", "user_id", "category", unique=True),
+        CheckConstraint(
+            "monthly_limit > 0", name="ck_budgets_monthly_limit_positive"
+        ),
+        # NULLS NOT DISTINCT so the user-level total (category=NULL) is unique too
+        Index(
+            "ix_budgets_user_category",
+            "user_id",
+            "category",
+            unique=True,
+            postgresql_nulls_not_distinct=True,
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

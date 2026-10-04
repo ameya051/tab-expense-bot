@@ -2,12 +2,13 @@
 
 import calendar
 import logging
-from datetime import date, timedelta
+from datetime import date
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import RecurringExpense
+from app.models import Expense, RecurringExpense
+from app.timeutils import today as local_today
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,11 @@ def _next_month_date(from_date: date, day_of_month: int) -> date:
     return date(year, month, actual_day)
 
 
+def compute_next_run_date(from_date: date, day_of_month: int) -> date:
+    """Public wrapper around the month-advancement logic for scheduler use."""
+    return _next_month_date(from_date, day_of_month)
+
+
 async def create_recurring(
     db: AsyncSession,
     user_id: int,
@@ -43,8 +49,7 @@ async def create_recurring(
 
     Sets next_run_date to the same day next month.
     """
-    today = date.today()
-    next_run = _next_month_date(today, day_of_month)
+    next_run = _next_month_date(local_today(), day_of_month)
 
     recurring = RecurringExpense(
         user_id=user_id,
@@ -77,7 +82,7 @@ async def get_user_recurring(
         select(RecurringExpense)
         .where(
             RecurringExpense.user_id == user_id,
-            RecurringExpense.active == True,
+            RecurringExpense.active.is_(True),
         )
         .order_by(RecurringExpense.next_run_date)
     )
@@ -92,7 +97,7 @@ async def cancel_recurring(
     stmt = select(RecurringExpense).where(
         RecurringExpense.id == recurring_id,
         RecurringExpense.user_id == user_id,
-        RecurringExpense.active == True,
+        RecurringExpense.active.is_(True),
     )
     result = await db.execute(stmt)
     recurring = result.scalar_one_or_none()
@@ -107,13 +112,12 @@ async def cancel_recurring(
     return recurring
 
 
-async def get_due_expenses(db: AsyncSession) -> list[RecurringExpense]:
+async def get_due_expenses(db: AsyncSession, today: date) -> list[RecurringExpense]:
     """Return all active recurring expenses that are due (next_run_date <= today)."""
-    today = date.today()
     stmt = (
         select(RecurringExpense)
         .where(
-            RecurringExpense.active == True,
+            RecurringExpense.active.is_(True),
             RecurringExpense.next_run_date <= today,
         )
         .order_by(RecurringExpense.next_run_date)
@@ -122,21 +126,47 @@ async def get_due_expenses(db: AsyncSession) -> list[RecurringExpense]:
     return list(result.scalars().all())
 
 
-async def advance_next_run(db: AsyncSession, recurring_id: int) -> None:
-    """Advance the next_run_date by one month."""
-    stmt = select(RecurringExpense).where(RecurringExpense.id == recurring_id)
-    result = await db.execute(stmt)
-    recurring = result.scalar_one_or_none()
+async def log_occurrence(
+    db: AsyncSession, recurring_id: int, run_date: date
+) -> RecurringExpense | None:
+    """Log one period of a recurring expense and advance it, atomically.
 
-    if recurring is None:
-        return
-
-    recurring.next_run_date = _next_month_date(
-        recurring.next_run_date, recurring.day_of_month
+    The expense insert and the next_run_date update share one transaction,
+    so a crash can never log a period without advancing (or vice versa).
+    Returns the updated entry, or None if the entry is inactive or run_date
+    was already handled by another run.
+    """
+    stmt = (
+        select(RecurringExpense)
+        .where(RecurringExpense.id == recurring_id)
+        .with_for_update()
     )
+    recurring = (await db.execute(stmt)).scalar_one_or_none()
+
+    if (
+        recurring is None
+        or not recurring.active
+        or recurring.next_run_date != run_date
+    ):
+        await db.rollback()
+        return None
+
+    db.add(
+        Expense(
+            user_id=recurring.user_id,
+            amount=recurring.amount,
+            currency=recurring.currency,
+            category=recurring.category,
+            date=run_date,
+            description=recurring.description,
+        )
+    )
+    recurring.next_run_date = _next_month_date(run_date, recurring.day_of_month)
     await db.commit()
     logger.info(
-        "Advanced recurring #%d next_run_date to %s",
+        "Logged recurring #%d for %s, next_run_date now %s",
         recurring_id,
+        run_date,
         recurring.next_run_date,
     )
+    return recurring

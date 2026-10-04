@@ -12,6 +12,14 @@ from app.models import Expense
 
 logger = logging.getLogger(__name__)
 
+# Spreadsheet apps execute cells starting with these as formulas.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _safe_cell(value: str) -> str:
+    """Neutralise CSV formula injection by prefixing risky cells with a quote."""
+    return "'" + value if value.startswith(_FORMULA_PREFIXES) else value
+
 
 async def generate_csv(
     db: AsyncSession,
@@ -54,12 +62,12 @@ async def generate_csv(
     for exp in expenses:
         writer.writerow([
             exp.date.isoformat(),
-            exp.category.title(),
+            _safe_cell(exp.category.title()),
             f"{exp.amount:.2f}",
             exp.currency,
             f"{exp.original_amount:.2f}" if exp.original_amount else "",
             exp.original_currency or "",
-            exp.description or "",
+            _safe_cell(exp.description or ""),
         ])
 
     string_buf.seek(0)

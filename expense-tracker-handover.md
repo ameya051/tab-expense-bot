@@ -7,13 +7,13 @@ A personal expense tracking bot built on Telegram, using Claude as the NLP layer
 
 ## Final Tech Stack
 ```
-python-telegram-bot  →  FastAPI  →  Groq API  →  PostgreSQL
+python-telegram-bot  →  FastAPI  →  OpenRouter API  →  PostgreSQL
                                   ↓
                              matplotlib (charts)
 ```
 - **Bot framework:** `python-telegram-bot`
 - **Backend:** FastAPI
-- **NLP:** Groq API
+- **NLP:** OpenRouter API (OpenAI models)
 - **Database:** PostgreSQL
 - **Charts:** matplotlib (rendered server-side, sent as PNG)
 - **Hosting:** Railway / Fly.io / any VPS
