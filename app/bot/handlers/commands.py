@@ -5,6 +5,7 @@ import logging
 
 from pydantic import ValidationError
 from telegram import Update
+from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from app.bot.handlers.common import (
@@ -407,6 +408,13 @@ async def export_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             ),
         )
 
+    except TimedOut:
+        # The upload may still have gone through, so don't report a failure.
+        logger.warning("/export: Telegram did not confirm the upload in time", exc_info=True)
+        await update.message.reply_text(
+            "⏳ Telegram is slow to confirm the upload. Your file may still arrive "
+            "in a moment. If it doesn't, try /export again."
+        )
     except Exception:
         logger.exception("Error in /export handler")
         await update.message.reply_text("❌ Something went wrong generating your export. Please try again.")

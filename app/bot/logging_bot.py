@@ -12,6 +12,10 @@ from app.logging_setup import summarize
 
 logger = logging.getLogger(__name__)
 
+# Telegram can take well over 5 s to confirm an upload; timing out earlier
+# reports a failure for a file that was actually delivered.
+MEDIA_READ_TIMEOUT = 30.0
+
 
 def _arg(args: tuple, kwargs: dict, index: int, name: str):
     """Fetch a call argument whether it was passed positionally or by keyword."""
@@ -46,6 +50,7 @@ class LoggingBot(ExtBot):
             _describe_file(_arg(args, kwargs, 1, "photo")),
             summarize(kwargs.get("caption")),
         )
+        kwargs.setdefault("read_timeout", MEDIA_READ_TIMEOUT)
         return await super().send_photo(*args, **kwargs)
 
     async def send_document(self, *args, **kwargs):
@@ -55,6 +60,7 @@ class LoggingBot(ExtBot):
             _describe_file(_arg(args, kwargs, 1, "document")),
             summarize(kwargs.get("caption")),
         )
+        kwargs.setdefault("read_timeout", MEDIA_READ_TIMEOUT)
         return await super().send_document(*args, **kwargs)
 
     async def edit_message_text(self, *args, **kwargs):

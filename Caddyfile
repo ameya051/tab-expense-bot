@@ -1,0 +1,11 @@
+{$DOMAIN} {
+	handle /webhook {
+		reverse_proxy app:8000
+	}
+	handle /health {
+		reverse_proxy app:8000
+	}
+	handle {
+		respond 404
+	}
+}

@@ -16,6 +16,7 @@ from telegram.ext import (
     TypeHandler,
     filters,
 )
+from telegram.request import HTTPXRequest
 
 from app.bot.handlers import (
     budget_handler,
@@ -171,10 +172,14 @@ async def register_bot_commands(app: Application) -> None:
 def create_bot_application(token: str) -> Application:
     """Build the PTB Application with all handlers registered."""
     # concurrent_updates: a slow AI call for one user must not block everyone.
-    # LoggingBot logs every outgoing message.
+    # LoggingBot logs every outgoing message. Passing .bot() bypasses the
+    # builder's request settings, so the request is built here; otherwise the
+    # bot gets a bare HTTPXRequest with a single connection shared by every
+    # concurrent update.
+    request = HTTPXRequest(connection_pool_size=256, read_timeout=10.0)
     app = (
         ApplicationBuilder()
-        .bot(LoggingBot(token=token))
+        .bot(LoggingBot(token=token, request=request))
         .concurrent_updates(True)
         .build()
     )
