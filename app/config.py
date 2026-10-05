@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     timezone: str = "Asia/Kolkata"
     rate_limit_per_minute: int = 20
     frankfurter_api_url: str = "https://api.frankfurter.dev/v1"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    log_sql: bool = False  # log every SQL statement and its parameters
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

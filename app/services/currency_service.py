@@ -99,10 +99,12 @@ class CurrencyService:
         if key in _rate_cache:
             rate, ts = _rate_cache[key]
             if now - ts < _CACHE_TTL:
+                logger.info("FX rate %s→%s = %s (cache hit)", base, target, rate)
                 return rate
 
         # Fetch from API
         url = f"{self.api_url}/latest?base={base}&symbols={target}"
+        started = time.perf_counter()
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(url)
@@ -112,7 +114,10 @@ class CurrencyService:
 
                 # Cache the result
                 _rate_cache[key] = (rate, now)
-                logger.info("FX rate: 1 %s = %.4f %s", base, rate, target)
+                logger.info(
+                    "FX rate %s→%s = %s (fetched in %.0f ms)",
+                    base, target, rate, (time.perf_counter() - started) * 1000,
+                )
                 return rate
 
         except Exception as exc:  # noqa: BLE001 — normalise transport/parse failures

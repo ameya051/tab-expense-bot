@@ -9,15 +9,13 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from telegram import Update
 from telegram.error import TelegramError
 
-from app.bot.setup import create_bot_application
+from app.bot.setup import create_bot_application, register_bot_commands
 from app.config import settings
 from app.database import ping_db
+from app.logging_setup import configure_logging
 from app.scheduler import recurring_expense_loop
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-)
+configure_logging()
 logger = logging.getLogger(__name__)
 
 WEBHOOK_PATH = "/webhook"
@@ -58,6 +56,7 @@ async def _start_polling() -> asyncio.Task:
 async def lifespan(app: FastAPI):
     """Manage bot lifecycle — startup and shutdown."""
     await bot_app.initialize()
+    await register_bot_commands(bot_app)
 
     # Start the recurring expense scheduler as a background task
     scheduler_task = asyncio.create_task(recurring_expense_loop(bot_app))

@@ -3,7 +3,9 @@
 import html
 import io
 import logging
+import time
 
+from starlette.concurrency import run_in_threadpool
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -35,6 +37,17 @@ async def get_preferred_currency(user_id: int) -> str:
     async with AsyncSessionLocal() as db:
         user = await user_service.get_user(db, user_id)
     return user.preferred_currency if user else settings.default_currency
+
+
+async def render_chart(render, *args) -> bytes:
+    """Draw a chart in a worker thread (CPU-bound) and log its size and time."""
+    started = time.perf_counter()
+    chart = await run_in_threadpool(render, *args)
+    logger.info(
+        "%s -> <%d bytes> (%.0f ms)",
+        render.__name__, len(chart), (time.perf_counter() - started) * 1000,
+    )
+    return chart
 
 
 async def send_photo_bytes(

@@ -1,8 +1,8 @@
 """Intent → action router for free-text and voice messages."""
 
 import logging
+from datetime import date
 
-from starlette.concurrency import run_in_threadpool
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -11,11 +11,13 @@ from app.bot.handlers.common import (
     esc,
     format_amount,
     get_preferred_currency,
+    render_chart,
     reply_chunked,
     send_photo_bytes,
 )
 from app.bot.ratelimit import user_rate_limiter
 from app.database import AsyncSessionLocal
+from app.logging_setup import summarize
 from app.nlp.parser import AIUnavailableError, NLPParser
 from app.nlp.transcriber import VoiceTranscriber
 from app.reports import charts, tables
@@ -31,6 +33,7 @@ from app.services.currency_service import (
     currency_service,
     is_supported_currency,
 )
+from app.timeutils import today as local_today
 
 logger = logging.getLogger(__name__)
 
@@ -69,15 +72,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await _dispatch_intent(update, context, user_id, text, pref_currency)
 
     except AIUnavailableError:
-        logger.warning("AI unavailable for message from user_id=%s (len=%d)", user_id, len(text or ""))
+        logger.warning("AI unavailable for message %s", summarize(text))
         await update.message.reply_text(AI_UNAVAILABLE_MESSAGE)
 
     except Exception:
-        logger.exception(
-            "Error handling message from user_id=%s (len=%d)",
-            user_id,
-            len(text or ""),
-        )
+        logger.exception("Error handling message %s", summarize(text))
         await update.message.reply_text("❌ Something went wrong. Please try again.")
 
 
@@ -137,6 +136,7 @@ async def _dispatch_intent(
     """
     intent = await _get_parser(context).parse(text, default_currency=pref_currency)
     message = update.message
+    logger.info("route: %s", intent.intent)
 
     async with AsyncSessionLocal() as db:
         if isinstance(intent, LogExpenseIntent):
@@ -194,15 +194,17 @@ async def _handle_log_expense(
     # Currency conversion if needed — never store an unconverted amount
     if stated_currency != pref_currency:
         if not is_supported_currency(stated_currency):
+            logger.warning("not saved: unsupported currency %s", summarize(stated_currency))
             return (
                 f"❌ I can't convert {esc(stated_currency)} to {pref_currency}, "
                 f"so nothing was saved. Please log it in {pref_currency}."
             )
         try:
-            converted, _rate = await currency_service.convert(
+            converted, rate = await currency_service.convert(
                 amount, stated_currency, pref_currency
             )
         except CurrencyConversionError:
+            logger.warning("not saved: no FX rate %s→%s", stated_currency, pref_currency)
             return (
                 f"❌ Couldn't convert {stated_currency} → {pref_currency} right now, "
                 f"so nothing was saved. Try again in a minute, or log it in {pref_currency}."
@@ -212,6 +214,10 @@ async def _handle_log_expense(
                 f"❌ That converts to {format_amount(converted, pref_currency)}, which is "
                 "outside the range I can store. Nothing was saved."
             )
+        logger.info(
+            "converted %s %s -> %s %s (rate %s)",
+            amount, stated_currency, converted, pref_currency, rate,
+        )
         original_amount = amount
         original_currency = stated_currency
         amount = converted
@@ -261,7 +267,6 @@ async def _handle_log_expense(
                 db,
                 user_id=user_id,
                 amount=float(expense.amount),
-                currency=pref_currency,
                 category=expense.category,
                 description=expense.description,
                 day_of_month=expense.date.day,
@@ -318,7 +323,7 @@ async def _budget_alert_lines(
             )
 
     # Check user-level total budget alert
-    user_budget_info = await budget_service.check_user_budget(db, user_id)
+    user_budget_info = await budget_service.check_budget(db, user_id)
 
     if user_budget_info and user_budget_info["alert_level"]:
         # Only show user total alert if it would add new information
@@ -351,6 +356,27 @@ async def _budget_alert_lines(
     return lines
 
 
+def _query_date_range(intent: QueryIntent) -> tuple[date, date]:
+    """Resolve a query's range: an explicit start/end date wins over the named period."""
+    if intent.start_date is None and intent.end_date is None:
+        return expense_service.resolve_date_range(intent.period)
+    all_time_start, today = expense_service.resolve_date_range("all_time")
+    return (intent.start_date or all_time_start, intent.end_date or today)
+
+
+def _period_label(intent: QueryIntent, start: date, end: date) -> str:
+    """Human label with the exact dates used, e.g. "Last Week (Sep 28 – Oct 04)"."""
+    fmt = "%b %d" if start.year == local_today().year else "%b %d %Y"
+    dates = start.strftime(fmt) if start == end else f"{start.strftime(fmt)} – {end.strftime(fmt)}"
+
+    if intent.start_date is not None or intent.end_date is not None:
+        return dates
+    name = intent.period.replace("_", " ").title()
+    if intent.period == "all_time":
+        return name
+    return f"{name} ({dates})"
+
+
 async def _handle_query(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -360,8 +386,17 @@ async def _handle_query(
     pref_currency: str,
 ) -> None:
     """Route a query intent to the right service call and format the response."""
-    start, end = expense_service.resolve_date_range(intent.period)
-    period_label = intent.period.replace("_", " ").title()
+    start, end = _query_date_range(intent)
+    period_label = _period_label(intent, start, end)
+    if intent.category:
+        branch = "category_total"
+    elif intent.limit:
+        branch = "recent"
+    else:
+        branch = {"category": "by_category", "day": "daily_trend"}.get(intent.group_by, "total")
+    logger.info(
+        "query range %s..%s label=%s branch=%s", start, end, summarize(period_label), branch
+    )
 
     # If asking about a specific category
     if intent.category:
@@ -391,7 +426,7 @@ async def _handle_query(
             await update.message.reply_text(f"📊 {period_label}: No expenses found.")
             return
 
-        chart_bytes = await run_in_threadpool(
+        chart_bytes = await render_chart(
             charts.generate_category_bar_chart, data, period_label, pref_currency
         )
         table_text = tables.format_summary_table(data, total, period_label, pref_currency)
@@ -407,7 +442,7 @@ async def _handle_query(
             await update.message.reply_text(f"📈 {period_label}: No expenses found.")
             return
 
-        chart_bytes = await run_in_threadpool(
+        chart_bytes = await render_chart(
             charts.generate_trend_line_chart, data, period_label, pref_currency
         )
         await send_photo_bytes(

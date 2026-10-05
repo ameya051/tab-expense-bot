@@ -1,9 +1,11 @@
 """Voice transcription via OpenRouter's audio transcriptions API."""
 
 import logging
+import time
 
 from openai import AsyncOpenAI
 
+from app.logging_setup import summarize
 from app.nlp.parser import AIUnavailableError, retry_ai_call
 
 logger = logging.getLogger(__name__)
@@ -36,12 +38,16 @@ class VoiceTranscriber:
         Returns:
             Transcribed text string, or empty string on failure.
         """
+        logger.info("Transcription request model=%s audio=%d bytes", self.model, len(audio_bytes))
+        started = time.perf_counter()
         try:
             text = await retry_ai_call(
                 lambda: self._call_transcribe_async(audio_bytes, filename),
                 label="Transcription",
             )
-            logger.info("Transcribed %d bytes of audio", len(audio_bytes))
+            logger.info(
+                "Transcript (%.2f s): %s", time.perf_counter() - started, summarize(text)
+            )
             return text.strip()
         except AIUnavailableError:
             raise

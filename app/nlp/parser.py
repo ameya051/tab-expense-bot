@@ -3,11 +3,13 @@
 import asyncio
 import json
 import logging
+import time
 
 import openai
 from openai import AsyncOpenAI
 from pydantic import TypeAdapter
 
+from app.logging_setup import summarize
 from app.schemas import ParsedIntent, UnknownIntent
 from app.timeutils import today
 
@@ -92,11 +94,23 @@ set "recurring": true.
 For queries about spending, return:
 {{
   "intent": "query",
-  "period": "today|this_week|this_month|all_time",
+  "period": "today|yesterday|this_week|last_week|this_month|last_month|all_time",
   "group_by": "category|day|none",
   "category": "<optional category filter or null>",
-  "limit": <optional number or null>
+  "limit": <optional number or null>,
+  "start_date": "<YYYY-MM-DD or null>",
+  "end_date": "<YYYY-MM-DD or null>"
 }}
+
+Query periods:
+- For today, yesterday, this week, last week, this month, last month or all \
+time, set "period" and leave "start_date" and "end_date" null. Weeks start \
+on Monday; "last week" means the previous Monday-to-Sunday week.
+- For any other range (a named month like "in September", "last 10 days", \
+"since Sep 15", "between Aug 1 and Aug 20"), set "start_date" and/or \
+"end_date" instead and leave "period" as "this_month".
+- "last N days" means from N-1 days before today through today.
+- "since <date>" means "start_date" = that date and "end_date" null.
 
 For deletion requests, return:
 {{
@@ -133,17 +147,24 @@ class NLPParser:
 
     async def parse(self, text: str, default_currency: str = "INR") -> ParsedIntent:
         """Parse user text into a structured intent via the async AI client."""
+        logger.info(
+            "LLM request model=%s currency=%s text=%s",
+            self.model, default_currency, summarize(text),
+        )
+        raw_json = None
         try:
             raw_json = await retry_ai_call(
                 lambda: self._call_ai_async(text, default_currency), label="AI"
             )
             parsed = json.loads(raw_json)
-            return _intent_adapter.validate_python(parsed)
+            intent = _intent_adapter.validate_python(parsed)
         except AIUnavailableError:
             raise
         except Exception:
-            logger.exception("NLP parsing failed (text_len=%d)", len(text))
+            logger.exception("NLP parsing failed; raw LLM response: %s", summarize(raw_json))
             return UnknownIntent(intent="unknown")
+        logger.info("parsed: %s", summarize(intent))
+        return intent
 
     async def _call_ai_async(self, text: str, default_currency: str) -> str:
         """Async chat-completions call (no temperature — gpt-5.6 models reject it)."""
@@ -151,6 +172,7 @@ class NLPParser:
             today=today().isoformat(), default_currency=default_currency
         )
 
+        started = time.perf_counter()
         completion = await self.client.chat.completions.create(
             model=self.model,
             messages=[
@@ -159,4 +181,8 @@ class NLPParser:
             ],
             response_format={"type": "json_object"},
         )
-        return completion.choices[0].message.content
+        content = completion.choices[0].message.content
+        logger.info(
+            "LLM response (%.2f s): %s", time.perf_counter() - started, summarize(content)
+        )
+        return content

@@ -81,7 +81,10 @@ class Expense(Base):
     user: Mapped["User"] = relationship(back_populates="expenses")
 
     def __repr__(self) -> str:
-        return f"<Expense id={self.id} amount={self.amount} category={self.category}>"
+        return (
+            f"<Expense id={self.id} {self.date} {self.category} "
+            f"{self.amount} {self.currency}>"
+        )
 
 
 class RecurringExpense(Base):
@@ -101,8 +104,7 @@ class RecurringExpense(Base):
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.telegram_id"), nullable=False, index=True
     )
-    amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
-    currency: Mapped[str] = mapped_column(String(10), default="INR")
+    amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)  # in the user's preferred_currency
     category: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     day_of_month: Mapped[int] = mapped_column(Integer, nullable=False)

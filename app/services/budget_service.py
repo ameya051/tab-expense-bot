@@ -6,12 +6,14 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.logging_setup import log_call
 from app.models import Budget, Expense
 from app.timeutils import today as local_today
 
 logger = logging.getLogger(__name__)
 
 
+@log_call
 async def set_budget(
     db: AsyncSession, user_id: int, monthly_limit: float, category: str | None = None
 ) -> Budget:
@@ -47,16 +49,21 @@ async def set_budget(
     return budget
 
 
-async def get_user_budget(db: AsyncSession, user_id: int) -> Budget | None:
-    """Get the user-level total budget (category is NULL)."""
+@log_call
+async def get_budget(
+    db: AsyncSession, user_id: int, category: str | None = None
+) -> Budget | None:
+    """Get one budget - user-level total (category=None) or category-specific."""
+    cat_lower = category.lower() if category else None
     stmt = select(Budget).where(
         Budget.user_id == user_id,
-        Budget.category.is_(None),
+        Budget.category == cat_lower,
     )
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
 
 
+@log_call
 async def get_budgets(db: AsyncSession, user_id: int) -> list[Budget]:
     """Return all category-level budgets for a user, sorted by category."""
     stmt = (
@@ -68,17 +75,12 @@ async def get_budgets(db: AsyncSession, user_id: int) -> list[Budget]:
     return list(result.scalars().all())
 
 
+@log_call
 async def delete_budget(
     db: AsyncSession, user_id: int, category: str | None = None
 ) -> Budget | None:
     """Delete a budget - either user-level total (category=None) or category-specific."""
-    cat_lower = category.lower() if category else None
-    stmt = select(Budget).where(
-        Budget.user_id == user_id,
-        Budget.category == cat_lower,
-    )
-    result = await db.execute(stmt)
-    budget = result.scalar_one_or_none()
+    budget = await get_budget(db, user_id, category)
 
     if budget is None:
         return None
@@ -88,76 +90,23 @@ async def delete_budget(
     return budget
 
 
+@log_call
 async def check_budget(
-    db: AsyncSession, user_id: int, category: str
+    db: AsyncSession, user_id: int, category: str | None = None
 ) -> dict | None:
-    """Check current spending vs. budget for a category this month.
+    """Check this month's spending vs. a budget - user-level total (category=None)
+    or category-specific.
 
     Returns:
         Dict with keys: budget, spent, percent, alert_level.
-        None if no budget is set for this category.
+        None if no such budget is set.
     """
-    # Get the budget
-    budget_stmt = select(Budget).where(
-        Budget.user_id == user_id,
-        Budget.category == category.lower(),
-    )
-    result = await db.execute(budget_stmt)
-    budget = result.scalar_one_or_none()
+    budget = await get_budget(db, user_id, category)
 
     if budget is None:
         return None
 
-    # Get current month spending for this category
-    today = local_today()
-    month_start = today.replace(day=1)
-
-    spent_stmt = select(
-        func.coalesce(func.sum(Expense.amount), 0)
-    ).where(
-        Expense.user_id == user_id,
-        Expense.category == category.lower(),
-        Expense.date >= month_start,
-        Expense.date <= today,
-    )
-    spent_result = await db.execute(spent_stmt)
-    spent = float(spent_result.scalar_one())
-
-    limit = float(budget.monthly_limit)
-    percent = round((spent / limit) * 100) if limit > 0 else 0
-
-    # Determine alert level
-    if percent >= 100:
-        alert_level = "danger"
-    elif percent >= 80:
-        alert_level = "warning"
-    elif percent >= 50:
-        alert_level = "info"
-    else:
-        alert_level = None
-
-    return {
-        "budget": limit,
-        "spent": spent,
-        "percent": percent,
-        "alert_level": alert_level,
-    }
-
-
-async def check_user_budget(db: AsyncSession, user_id: int) -> dict | None:
-    """Check current total spending vs. user-level budget for this month.
-
-    Returns:
-        Dict with keys: budget, spent, percent, alert_level.
-        None if no user-level budget is set.
-    """
-    # Get the user-level budget (category is NULL)
-    budget = await get_user_budget(db, user_id)
-
-    if budget is None:
-        return None
-
-    # Get current month total spending (all categories)
+    # Get current month spending - all categories for the total budget
     today = local_today()
     month_start = today.replace(day=1)
 
@@ -168,6 +117,8 @@ async def check_user_budget(db: AsyncSession, user_id: int) -> dict | None:
         Expense.date >= month_start,
         Expense.date <= today,
     )
+    if category:
+        spent_stmt = spent_stmt.where(Expense.category == category.lower())
     spent_result = await db.execute(spent_stmt)
     spent = float(spent_result.scalar_one())
 

@@ -4,7 +4,6 @@ import io
 import logging
 
 from pydantic import ValidationError
-from starlette.concurrency import run_in_threadpool
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -13,12 +12,14 @@ from app.bot.handlers.common import (
     esc,
     format_amount,
     get_preferred_currency,
+    render_chart,
     reply_chunked,
     send_photo_bytes,
 )
 from app.bot.handlers.keyboards import build_cancel_recurring_keyboard
 from app.bot.ratelimit import user_rate_limiter
 from app.database import AsyncSessionLocal
+from app.logging_setup import summarize
 from app.reports import charts, tables
 from app.schemas import BudgetArgs
 from app.services import (
@@ -99,7 +100,7 @@ async def summary_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
             return
 
-        chart_bytes = await run_in_threadpool(
+        chart_bytes = await render_chart(
             charts.generate_category_bar_chart, data, period_label, pref_currency
         )
         table_text = tables.format_summary_table(data, total, period_label, pref_currency)
@@ -140,7 +141,7 @@ async def report_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             return
 
-        chart_bytes = await run_in_threadpool(
+        chart_bytes = await render_chart(
             charts.generate_trend_line_chart, data, period_label, pref_currency
         )
         await send_photo_bytes(update, context, chart_bytes, caption=f"📈 Spending Trend — {period_label}")
@@ -193,7 +194,7 @@ async def budget_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if not args:
             # View all budgets (user total + categories)
             async with AsyncSessionLocal() as db:
-                user_budget = await budget_service.get_user_budget(db, user_id)
+                user_budget = await budget_service.get_budget(db, user_id)
                 cat_budgets = await budget_service.get_budgets(db, user_id)
 
                 if not user_budget and not cat_budgets:
@@ -211,7 +212,7 @@ async def budget_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 lines = ["📊 <b>Your Budgets</b>\n"]
 
                 if user_budget:
-                    user_budget_info = await budget_service.check_user_budget(db, user_id)
+                    user_budget_info = await budget_service.check_budget(db, user_id)
                     if user_budget_info:
                         spent = user_budget_info["spent"]
                         limit = user_budget_info["budget"]
@@ -261,8 +262,10 @@ async def budget_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             # ctx.error holds the original ValueError object — stringify it.
             ctx = exc.errors()[0].get("ctx") or {}
             error_msg = str(ctx.get("error") or "Invalid budget arguments")
+            logger.info("/budget rejected: %s", summarize(error_msg))
             await update.message.reply_text("❌ " + error_msg)
             return
+        logger.info("/budget parsed: %s", summarize(parsed))
 
         async with AsyncSessionLocal() as db:
             if parsed.category is not None:
@@ -383,6 +386,7 @@ async def export_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
 
         start, end = expense_service.resolve_date_range(period)
+        logger.info("/export period=%s range %s..%s", period, start, end)
 
         async with AsyncSessionLocal() as db:
             csv_bytes, count = await export_service.generate_csv(db, user_id, start, end)

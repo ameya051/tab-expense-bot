@@ -43,10 +43,22 @@ class QueryIntent(BaseModel):
     """Structured result when the user wants to query their spending."""
 
     intent: Literal["query"]
-    period: Literal["today", "this_week", "this_month", "all_time"] = "this_month"
+    period: Literal[
+        "today",
+        "yesterday",
+        "this_week",
+        "last_week",
+        "this_month",
+        "last_month",
+        "all_time",
+    ] = "this_month"
     group_by: Literal["category", "day", "none"] = "none"
     category: str | None = None
     limit: int | None = None
+    # Explicit range for anything a named period can't express ("in September",
+    # "last 10 days"). When set, it takes precedence over period.
+    start_date: date | None = None
+    end_date: date | None = None
 
     @field_validator("limit")
     @classmethod
@@ -55,6 +67,13 @@ class QueryIntent(BaseModel):
         if value is None or value <= 0:
             return None
         return min(value, MAX_RECENT_LIMIT)
+
+    @model_validator(mode="after")
+    def _order_dates(self) -> QueryIntent:
+        """Swap a reversed custom range instead of returning nothing."""
+        if self.start_date and self.end_date and self.start_date > self.end_date:
+            self.start_date, self.end_date = self.end_date, self.start_date
+        return self
 
 
 class DeleteIntent(BaseModel):

@@ -7,7 +7,8 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Expense, RecurringExpense
+from app.logging_setup import log_call
+from app.models import Expense, RecurringExpense, User
 from app.timeutils import today as local_today
 
 logger = logging.getLogger(__name__)
@@ -36,11 +37,11 @@ def compute_next_run_date(from_date: date, day_of_month: int) -> date:
     return _next_month_date(from_date, day_of_month)
 
 
+@log_call
 async def create_recurring(
     db: AsyncSession,
     user_id: int,
     amount: float,
-    currency: str,
     category: str,
     description: str | None,
     day_of_month: int,
@@ -54,7 +55,6 @@ async def create_recurring(
     recurring = RecurringExpense(
         user_id=user_id,
         amount=amount,
-        currency=currency,
         category=category.lower(),
         description=description,
         day_of_month=day_of_month,
@@ -74,6 +74,7 @@ async def create_recurring(
     return recurring
 
 
+@log_call
 async def get_user_recurring(
     db: AsyncSession, user_id: int
 ) -> list[RecurringExpense]:
@@ -90,6 +91,7 @@ async def get_user_recurring(
     return list(result.scalars().all())
 
 
+@log_call
 async def cancel_recurring(
     db: AsyncSession, user_id: int, recurring_id: int
 ) -> RecurringExpense | None:
@@ -112,6 +114,7 @@ async def cancel_recurring(
     return recurring
 
 
+@log_call
 async def get_due_expenses(db: AsyncSession, today: date) -> list[RecurringExpense]:
     """Return all active recurring expenses that are due (next_run_date <= today)."""
     stmt = (
@@ -126,15 +129,16 @@ async def get_due_expenses(db: AsyncSession, today: date) -> list[RecurringExpen
     return list(result.scalars().all())
 
 
+@log_call
 async def log_occurrence(
     db: AsyncSession, recurring_id: int, run_date: date
-) -> RecurringExpense | None:
+) -> tuple[RecurringExpense, str] | None:
     """Log one period of a recurring expense and advance it, atomically.
 
     The expense insert and the next_run_date update share one transaction,
     so a crash can never log a period without advancing (or vice versa).
-    Returns the updated entry, or None if the entry is inactive or run_date
-    was already handled by another run.
+    Returns (updated entry, currency logged in), or None if the entry is
+    inactive or run_date was already handled by another run.
     """
     stmt = (
         select(RecurringExpense)
@@ -151,11 +155,20 @@ async def log_occurrence(
         await db.rollback()
         return None
 
+    # Read after taking the row lock: user_service.change_currency converts
+    # recurring amounts before switching preferred_currency, so this fresh
+    # snapshot always pairs the amount with its matching currency.
+    currency = (
+        await db.execute(
+            select(User.preferred_currency).where(User.telegram_id == recurring.user_id)
+        )
+    ).scalar_one()
+
     db.add(
         Expense(
             user_id=recurring.user_id,
             amount=recurring.amount,
-            currency=recurring.currency,
+            currency=currency,
             category=recurring.category,
             date=run_date,
             description=recurring.description,
@@ -169,4 +182,4 @@ async def log_occurrence(
         run_date,
         recurring.next_run_date,
     )
-    return recurring
+    return recurring, currency

@@ -7,6 +7,7 @@ from datetime import datetime, time as dt_time, timedelta
 from sqlalchemy import text
 
 from app.database import AsyncSessionLocal, engine
+from app.logging_setup import set_log_context
 from app.reports.tables import _get_emoji
 from app.services import recurring_service
 from app.timeutils import local_tz, now as local_now, today as local_today
@@ -37,6 +38,8 @@ async def recurring_expense_loop(bot_app) -> None:
     5. Sends a Telegram notification to the user
     6. Handles missed days (catches up on all overdue entries)
     """
+    # This task has its own context, so the tag never leaks into update logs.
+    set_log_context(job="recurring")
     logger.info("Recurring expense scheduler started")
 
     # On first startup, process any overdue entries immediately
@@ -112,32 +115,35 @@ async def _process_due_expenses_locked(bot_app) -> None:
     logger.info("Processing %d due recurring expense(s)", len(due_entries))
 
     for entry in due_entries:
+        set_log_context(job="recurring", recurring=entry.id, user=entry.user_id)
         try:
             run_date = entry.next_run_date
             while run_date <= today:
                 # Log one expense per missed period (catch-up)
                 async with AsyncSessionLocal() as db:
-                    updated = await recurring_service.log_occurrence(
+                    result = await recurring_service.log_occurrence(
                         db, entry.id, run_date
                     )
-                if updated is None:
+                if result is None:
                     break  # cancelled, or already handled by another run
 
-                await _notify_user(bot_app, updated)
+                updated, currency = result
+                await _notify_user(bot_app, updated, currency)
                 run_date = updated.next_run_date
 
         except Exception:
             logger.exception(
                 "Failed to process recurring expense #%d", entry.id
             )
+    set_log_context(job="recurring")
 
 
-async def _notify_user(bot_app, entry) -> None:
+async def _notify_user(bot_app, entry, currency: str) -> None:
     """Tell the user a recurring expense was auto-logged (best effort)."""
     emoji = _get_emoji(entry.category)
     desc = f" — {entry.description}" if entry.description else ""
     message = (
-        f"🔄 Auto-logged: {entry.currency} {float(entry.amount):,.2f} "
+        f"🔄 Auto-logged: {currency} {float(entry.amount):,.2f} "
         f"for {emoji} {entry.category.title()}{desc}"
     )
     try:

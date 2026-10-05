@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.logging_setup import log_call
 from app.models import Expense
 from app.timeutils import today as local_today
 
@@ -19,11 +20,20 @@ def resolve_date_range(period: str) -> tuple[date, date]:
     match period:
         case "today":
             return (today, today)
+        case "yesterday":
+            yesterday = today - timedelta(days=1)
+            return (yesterday, yesterday)
         case "this_week":
             start = today - timedelta(days=today.weekday())  # Monday
             return (start, today)
+        case "last_week":
+            start = today - timedelta(days=today.weekday() + 7)  # previous Monday
+            return (start, start + timedelta(days=6))
         case "this_month":
             return (today.replace(day=1), today)
+        case "last_month":
+            end = today.replace(day=1) - timedelta(days=1)
+            return (end.replace(day=1), end)
         case "all_time":
             return (date(2000, 1, 1), today)
         case _:
@@ -34,6 +44,7 @@ def resolve_date_range(period: str) -> tuple[date, date]:
 # Create
 # ---------------------------------------------------------------------------
 
+@log_call
 async def add_expense(
     db: AsyncSession,
     user_id: int,
@@ -66,6 +77,7 @@ async def add_expense(
 # Delete
 # ---------------------------------------------------------------------------
 
+@log_call
 async def delete_last_expense(db: AsyncSession, user_id: int) -> Expense | None:
     """Delete the user's most recent expense. Returns the deleted row or None."""
     # Find the most recent expense
@@ -86,6 +98,7 @@ async def delete_last_expense(db: AsyncSession, user_id: int) -> Expense | None:
     return expense
 
 
+@log_call
 async def delete_expense_by_id(
     db: AsyncSession, user_id: int, expense_id: int
 ) -> Expense | None:
@@ -108,6 +121,7 @@ async def delete_expense_by_id(
 # Query — aggregations
 # ---------------------------------------------------------------------------
 
+@log_call
 async def get_total(
     db: AsyncSession, user_id: int, start: date, end: date
 ) -> float:
@@ -121,6 +135,7 @@ async def get_total(
     return float(result.scalar_one())
 
 
+@log_call
 async def get_by_category(
     db: AsyncSession, user_id: int, start: date, end: date
 ) -> list[dict]:
@@ -139,6 +154,7 @@ async def get_by_category(
     return [{"category": row.category, "total": float(row.total)} for row in result]
 
 
+@log_call
 async def get_daily_trend(
     db: AsyncSession, user_id: int, start: date, end: date
 ) -> list[dict]:
@@ -157,6 +173,7 @@ async def get_daily_trend(
     return [{"date": row.date, "total": float(row.total)} for row in result]
 
 
+@log_call
 async def get_category_total(
     db: AsyncSession,
     user_id: int,
@@ -175,6 +192,7 @@ async def get_category_total(
     return float(result.scalar_one())
 
 
+@log_call
 async def get_recent(
     db: AsyncSession, user_id: int, limit: int = 5
 ) -> list[Expense]:

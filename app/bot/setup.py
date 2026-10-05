@@ -2,7 +2,7 @@
 
 import logging
 
-from telegram import Chat, Update
+from telegram import BotCommand, Chat, Update
 from telegram.constants import ChatMemberStatus
 from telegram.error import TelegramError
 from telegram.ext import (
@@ -28,8 +28,10 @@ from app.bot.handlers import (
     summary_handler,
     voice_handler,
 )
+from app.bot.logging_bot import LoggingBot
 from app.bot.onboarding import build_onboarding_handler, expired_currency_callback
 from app.config import settings
+from app.logging_setup import set_log_context, summarize
 from app.nlp.parser import NLPParser
 from app.nlp.transcriber import VoiceTranscriber
 
@@ -47,6 +49,56 @@ _GROUP_REFUSAL_TEXT = (
     "🚫 I only work in private chats for privacy reasons.\n"
     "Message me directly and I'll help you track your expenses!"
 )
+
+# Command menu Telegram shows when the user types "/". /skip is omitted: it
+# only means something mid-onboarding.
+BOT_COMMANDS = [
+    BotCommand("start", "Set up the bot"),
+    BotCommand("summary", "Monthly category breakdown"),
+    BotCommand("report", "Spending trend over time"),
+    BotCommand("budget", "Set category budgets"),
+    BotCommand("recurring", "Manage recurring expenses"),
+    BotCommand("export", "Download expenses as CSV"),
+    BotCommand("delete", "Remove your last expense"),
+    BotCommand("settings", "Change your currency"),
+]
+
+
+async def _log_incoming_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Tag this update's log lines and log what arrived.
+
+    Runs first (group -2). Each update is processed in its own task with its
+    handler groups awaited in sequence, so the context set here applies to
+    every later log line for this update.
+    """
+    user = update.effective_user
+    set_log_context(upd=update.update_id, user=user.id if user else "-")
+
+    if update.message is not None:
+        message = update.message
+        if message.voice is not None:
+            what = f"voice: {message.voice.duration}s, {message.voice.file_size} bytes"
+        elif message.text is not None:
+            kind = "command" if message.text.startswith("/") else "text"
+            what = f"{kind}: {summarize(message.text)}"
+        else:
+            what = "message without text or voice"
+    elif update.edited_message is not None:
+        what = f"edited message (ignored): {summarize(update.edited_message.text)}"
+    elif update.callback_query is not None:
+        what = f"button: data={summarize(update.callback_query.data)}"
+    elif update.my_chat_member is not None:
+        member = update.my_chat_member
+        what = (
+            f"bot membership: {member.old_chat_member.status} → "
+            f"{member.new_chat_member.status}"
+        )
+    else:
+        what = "other update type"
+
+    chat = update.effective_chat
+    where = f" [{chat.type} chat {chat.id}]" if chat and chat.type != Chat.PRIVATE else ""
+    logger.info("← %s%s", what, where)
 
 
 async def _group_refusal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -102,12 +154,27 @@ async def _error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
 
+async def register_bot_commands(app: Application) -> None:
+    """Publish BOT_COMMANDS so Telegram suggests them when the user types "/".
+
+    Uses the default scope, which also replaces any list set in BotFather.
+    A failure only loses the menu, so it is logged instead of stopping startup.
+    """
+    try:
+        await app.bot.set_my_commands(BOT_COMMANDS)
+    except TelegramError:
+        logger.warning("Could not register bot commands", exc_info=True)
+        return
+    logger.info("Registered %d bot commands", len(BOT_COMMANDS))
+
+
 def create_bot_application(token: str) -> Application:
     """Build the PTB Application with all handlers registered."""
-    # concurrent_updates: a slow AI call for one user must not block everyone
+    # concurrent_updates: a slow AI call for one user must not block everyone.
+    # LoggingBot logs every outgoing message.
     app = (
         ApplicationBuilder()
-        .token(token)
+        .bot(LoggingBot(token=token))
         .concurrent_updates(True)
         .build()
     )
@@ -120,6 +187,9 @@ def create_bot_application(token: str) -> Application:
     app.bot_data["voice_transcriber"] = VoiceTranscriber(
         api_key=settings.openrouter_api_key, model=settings.whisper_model
     )
+
+    # Incoming-update logger — runs before everything else and never stops processing.
+    app.add_handler(TypeHandler(Update, _log_incoming_update), group=-2)
 
     # Group-chat refusal — registered first in its own group so it consumes
     # non-private updates before any data handler can see them.

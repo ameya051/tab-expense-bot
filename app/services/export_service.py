@@ -8,6 +8,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.logging_setup import log_call
 from app.models import Expense
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ def _safe_cell(value: str) -> str:
     return "'" + value if value.startswith(_FORMULA_PREFIXES) else value
 
 
+@log_call
 async def generate_csv(
     db: AsyncSession,
     user_id: int,

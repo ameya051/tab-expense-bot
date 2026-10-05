@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.logging_setup import log_call
 from app.models import Budget, Expense, RecurringExpense, User
 from app.services.currency_service import currency_service
 
@@ -30,6 +31,7 @@ class CurrencyChangeResult:
     rates: dict[str, float] = field(default_factory=dict)  # source code -> rate to new
 
 
+@log_call
 async def upsert_user(
     db: AsyncSession,
     telegram_id: int,
@@ -59,6 +61,7 @@ async def upsert_user(
     await db.commit()
 
 
+@log_call
 async def get_user(db: AsyncSession, telegram_id: int) -> User | None:
     """Fetch a user by their Telegram ID, or None if not found."""
     stmt = select(User).where(User.telegram_id == telegram_id)
@@ -66,6 +69,7 @@ async def get_user(db: AsyncSession, telegram_id: int) -> User | None:
     return result.scalar_one_or_none()
 
 
+@log_call
 async def change_currency(
     db: AsyncSession, telegram_id: int, new_currency: str
 ) -> CurrencyChangeResult:
@@ -90,30 +94,29 @@ async def change_currency(
             )
         ).scalars()
     )
-    recurring_currencies = set(
-        (
-            await db.execute(
-                select(RecurringExpense.currency)
-                .where(RecurringExpense.user_id == telegram_id)
-                .distinct()
-            )
-        ).scalars()
-    )
+    recurring_count = (
+        await db.execute(
+            select(func.count())
+            .select_from(RecurringExpense)
+            .where(RecurringExpense.user_id == telegram_id)
+        )
+    ).scalar_one()
     budget_count = (
         await db.execute(
             select(func.count()).select_from(Budget).where(Budget.user_id == telegram_id)
         )
     ).scalar_one()
-    # End the read transaction before making network calls.
-    await db.rollback()
 
-    # Budgets have no currency column — they are implicitly in the old currency.
-    sources = expense_currencies | recurring_currencies
-    if budget_count:
-        sources.add(old)
-    sources.discard(new)
+    # Recurring expenses and budgets have no currency column — they are
+    # implicitly in the old currency.
+    if recurring_count or budget_count:
+        expense_currencies.add(old)
+    expense_currencies.discard(new)
 
-    rates = {src: await currency_service.get_rate(src, new) for src in sorted(sources)}
+    rates = {
+        source: await currency_service.get_rate(source, new)
+        for source in sorted(expense_currencies)
+    }
 
     try:
         expenses_converted = 0
@@ -144,20 +147,24 @@ async def change_currency(
             )
             expenses_converted += result.rowcount
 
+        if recurring_count or budget_count:
+            r_old = Decimal(str(rates[old]))
+
+        # Must run before the users update below — recurring_service.log_occurrence
+        # relies on this row lock to see a consistent amount + currency.
+        if recurring_count:
             await db.execute(
                 update(RecurringExpense)
-                .where(RecurringExpense.user_id == telegram_id, RecurringExpense.currency == src)
+                .where(RecurringExpense.user_id == telegram_id)
                 .values(
                     amount=func.greatest(
-                        func.round(RecurringExpense.amount * r, 2), _MIN_AMOUNT
-                    ),
-                    currency=new,
+                        func.round(RecurringExpense.amount * r_old, 2), _MIN_AMOUNT
+                    )
                 )
                 .execution_options(synchronize_session=False)
             )
 
         if budget_count:
-            r_old = Decimal(str(rates[old]))
             await db.execute(
                 update(Budget)
                 .where(Budget.user_id == telegram_id)
@@ -195,6 +202,7 @@ async def change_currency(
     )
 
 
+@log_call
 async def mark_onboarding_complete(db: AsyncSession, telegram_id: int) -> None:
     """Mark the user's onboarding as complete."""
     stmt = (
