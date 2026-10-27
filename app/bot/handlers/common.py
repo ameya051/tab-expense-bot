@@ -4,6 +4,7 @@ import html
 import io
 import logging
 import time
+from datetime import date
 
 from starlette.concurrency import run_in_threadpool
 from telegram import Update
@@ -75,6 +76,17 @@ def format_amount(amount: float, currency: str) -> str:
     """Format an amount with its currency symbol."""
     symbol = get_currency_symbol(currency)
     return f"{symbol}{amount:,.2f}"
+
+
+def recurring_schedule_text(frequency: str, day_of_month: int | None, on: date) -> str:
+    """Describe a recurring schedule, e.g. "every Monday". `on` is any run date."""
+    if frequency == "daily":
+        return "every day"
+    if frequency == "weekly":
+        return f"every {on.strftime('%A')}"
+    day = day_of_month or on.day
+    suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    return f"on the {day}{suffix} of every month"
 
 
 async def reply_chunked(message, text: str, **kwargs) -> None:

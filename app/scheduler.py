@@ -34,7 +34,7 @@ async def recurring_expense_loop(bot_app) -> None:
     1. Sleeps until local midnight (TIMEZONE setting)
     2. Queries all active recurring expenses with next_run_date <= today
     3. Logs each one as a new expense
-    4. Advances the next_run_date by one month
+    4. Advances the next_run_date by one period (day, week or month)
     5. Sends a Telegram notification to the user
     6. Handles missed days (catches up on all overdue entries)
     """

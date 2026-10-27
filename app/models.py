@@ -88,13 +88,18 @@ class Expense(Base):
 
 
 class RecurringExpense(Base):
-    """A recurring expense that the bot auto-logs monthly."""
+    """A recurring expense that the bot auto-logs daily, weekly or monthly."""
 
     __tablename__ = "recurring_expenses"
     __table_args__ = (
         CheckConstraint("amount > 0", name="ck_recurring_expenses_amount_positive"),
         CheckConstraint(
-            "day_of_month BETWEEN 1 AND 31",
+            "frequency IN ('daily', 'weekly', 'monthly')",
+            name="ck_recurring_expenses_frequency",
+        ),
+        CheckConstraint(
+            "(frequency = 'monthly') = (day_of_month IS NOT NULL) "
+            "AND (day_of_month IS NULL OR day_of_month BETWEEN 1 AND 31)",
             name="ck_recurring_expenses_day_of_month",
         ),
         Index("ix_recurring_active_next_run", "active", "next_run_date"),
@@ -107,7 +112,9 @@ class RecurringExpense(Base):
     amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)  # in the user's preferred_currency
     category: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    day_of_month: Mapped[int] = mapped_column(Integer, nullable=False)
+    frequency: Mapped[str] = mapped_column(Text, nullable=False, default="monthly")
+    # Monthly only: the anchor day, kept so month-end clamping doesn't drift.
+    day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
     next_run_date: Mapped[date_type] = mapped_column(Date, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(default=func.now())
@@ -117,7 +124,7 @@ class RecurringExpense(Base):
     def __repr__(self) -> str:
         return (
             f"<RecurringExpense id={self.id} category={self.category} "
-            f"amount={self.amount} day={self.day_of_month}>"
+            f"amount={self.amount} {self.frequency} day={self.day_of_month}>"
         )
 
 

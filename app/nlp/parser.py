@@ -76,7 +76,8 @@ For logging expenses, return:
   "category": "<category — free-form, lowercase, e.g. food, transport, groceries>",
   "date": "<YYYY-MM-DD>",
   "description": "<brief description or null>",
-  "recurring": false
+  "recurring": false,
+  "recurring_frequency": null
 }}
 
 Currency detection:
@@ -85,11 +86,22 @@ Currency detection:
 - If no currency is mentioned, default to "{default_currency}".
 
 Recurring expenses:
-- If the user indicates this is a recurring, monthly, or subscription expense, \
-set "recurring": true.
-- Look for keywords: "recurring", "monthly", "every month", "subscription", \
-"auto-pay", "repeat".
-- Default is false.
+- If the user indicates this expense repeats, set "recurring": true and set \
+"recurring_frequency":
+  - "daily" for "daily", "every day", "each day", "per day".
+  - "weekly" for "weekly", "every week", "each week", "every Monday" (or any weekday).
+  - "monthly" for "monthly", "every month", "subscription", "auto-pay", or \
+"recurring"/"repeat" with no period.
+- Future phrasing like "200 will be spent on coffee daily" or "I'll spend 1500 \
+on cleaning every week" is still "log_expense" with today's date and \
+"recurring": true.
+- Always include "recurring_frequency". When "recurring" is true it must be \
+"daily", "weekly" or "monthly", never null. When "recurring" is false it must be null.
+- Default is "recurring": false.
+- Example: "200 on coffee every day" → "amount": 200, "category": "coffee", \
+"recurring": true, "recurring_frequency": "daily".
+- Example: "1500 for the cleaner weekly" → "amount": 1500, "category": "cleaning", \
+"recurring": true, "recurring_frequency": "weekly".
 
 For queries about spending, return:
 {{

@@ -2,7 +2,7 @@
 
 import calendar
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,8 +32,18 @@ def _next_month_date(from_date: date, day_of_month: int) -> date:
     return date(year, month, actual_day)
 
 
-def compute_next_run_date(from_date: date, day_of_month: int) -> date:
-    """Public wrapper around the month-advancement logic for scheduler use."""
+def compute_next_run_date(
+    from_date: date, frequency: str, day_of_month: int | None
+) -> date:
+    """Return the run date one period after from_date.
+
+    Monthly entries step to day_of_month (clamped); daily and weekly step a
+    fixed number of days, so weekly keeps from_date's weekday.
+    """
+    if frequency == "daily":
+        return from_date + timedelta(days=1)
+    if frequency == "weekly":
+        return from_date + timedelta(days=7)
     return _next_month_date(from_date, day_of_month)
 
 
@@ -44,19 +54,26 @@ async def create_recurring(
     amount: float,
     category: str,
     description: str | None,
-    day_of_month: int,
+    frequency: str,
+    start_date: date,
 ) -> RecurringExpense:
     """Create a new recurring expense entry.
 
-    Sets next_run_date to the same day next month.
+    start_date is the occurrence just logged by the user; next_run_date is the
+    first date on its schedule after today.
     """
-    next_run = _next_month_date(local_today(), day_of_month)
+    day_of_month = start_date.day if frequency == "monthly" else None
+    today = local_today()
+    next_run = compute_next_run_date(start_date, frequency, day_of_month)
+    while next_run <= today:
+        next_run = compute_next_run_date(next_run, frequency, day_of_month)
 
     recurring = RecurringExpense(
         user_id=user_id,
         amount=amount,
         category=category.lower(),
         description=description,
+        frequency=frequency,
         day_of_month=day_of_month,
         next_run_date=next_run,
         active=True,
@@ -65,11 +82,12 @@ async def create_recurring(
     await db.commit()
     await db.refresh(recurring)
     logger.info(
-        "Created recurring expense: %s %s for user %d on day %d",
+        "Created %s recurring expense: %s %s for user %d, first run %s",
+        frequency,
         amount,
         category,
         user_id,
-        day_of_month,
+        next_run,
     )
     return recurring
 
@@ -174,7 +192,9 @@ async def log_occurrence(
             description=recurring.description,
         )
     )
-    recurring.next_run_date = _next_month_date(run_date, recurring.day_of_month)
+    recurring.next_run_date = compute_next_run_date(
+        run_date, recurring.frequency, recurring.day_of_month
+    )
     await db.commit()
     logger.info(
         "Logged recurring #%d for %s, next_run_date now %s",
