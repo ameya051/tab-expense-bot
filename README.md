@@ -153,6 +153,28 @@ docker build -t expense-bot .
 docker run --env-file .env -p 8000:8000 expense-bot
 ```
 
+### Auto-deploy (GitHub Actions)
+
+`.github/workflows/deploy.yml` runs `scripts/deploy.sh` on the server on every push to `main` (or manually from the Actions tab), and fails if the app doesn't come back healthy. It goes through AWS Systems Manager, so the instance needs no inbound SSH:
+
+- GitHub authenticates to AWS with OIDC and assumes the IAM role `expense-bot-github-deploy`, which trusts only this repo's `main` branch.
+- That role may only send the SSM document `ExpenseBotDeploy` to the bot's instance. The document runs `sudo -iu ubuntu ~/expense-bot/scripts/deploy.sh`.
+- Repo secrets: `AWS_DEPLOY_ROLE_ARN`, `EC2_INSTANCE_ID`.
+
+Keep the server's checkout clean: `deploy.sh` uses `git pull --ff-only`, so local edits there make deploys fail.
+
+### Viewing the production DB
+
+`compose.prod.yml` publishes Postgres on `127.0.0.1:5432` of the server only. Port 22 is closed, so tunnel through SSM (needs the AWS CLI and Session Manager plugin):
+
+```bash
+aws ssm start-session --target <instance-id> --region ap-south-1   --document-name AWS-StartPortForwardingSession   --parameters portNumber=5432,localPortNumber=5433
+```
+
+Leave it running and point any client (DBeaver, TablePlus, pgAdmin) at `localhost:5433`, database `expense_bot`, user `postgres`, password `POSTGRES_PASSWORD` from the server's `.env`. Don't use the client's own SSH-tunnel option. If your `~/.ssh/config` host uses an SSM `ProxyCommand`, `ssh -N -L 5433:localhost:5432 <host>` works too.
+
+Prefer browsing read-only: amounts are stored in each user's `preferred_currency`, and editing them by hand bypasses currency conversion.
+
 ## Timezone
 
 `TIMEZONE` (default `Asia/Kolkata`) is the IANA timezone used for "today", month boundaries in budgets/summaries, and for the recurring-expense scheduler, which runs at local midnight.
