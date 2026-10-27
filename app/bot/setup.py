@@ -18,7 +18,9 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 
+from app.agent.runner import AgentRunner
 from app.bot.handlers import (
+    agent_confirm_callback,
     budget_handler,
     cancel_recurring_callback,
     delete_handler,
@@ -33,7 +35,6 @@ from app.bot.logging_bot import LoggingBot
 from app.bot.onboarding import build_onboarding_handler, expired_currency_callback
 from app.config import settings
 from app.logging_setup import set_log_context, summarize
-from app.nlp.parser import NLPParser
 from app.nlp.transcriber import VoiceTranscriber
 
 logger = logging.getLogger(__name__)
@@ -184,9 +185,9 @@ def create_bot_application(token: str) -> Application:
         .build()
     )
 
-    # Shared NLP tools are constructed once and stored on bot_data so handlers
+    # Shared AI clients are constructed once and stored on bot_data so handlers
     # can access them via context.bot_data instead of module-level singletons.
-    app.bot_data["nlp_parser"] = NLPParser(
+    app.bot_data["agent"] = AgentRunner(
         api_key=settings.openrouter_api_key, model=settings.openrouter_model
     )
     app.bot_data["voice_transcriber"] = VoiceTranscriber(
@@ -224,11 +225,15 @@ def create_bot_application(token: str) -> Application:
     app.add_handler(
         CallbackQueryHandler(cancel_recurring_callback, pattern=r"^cancel_recurring:")
     )
+    # Yes/No buttons for actions the agent asked the user to confirm
+    app.add_handler(
+        CallbackQueryHandler(agent_confirm_callback, pattern=r"^agent_(confirm|cancel):")
+    )
 
     # Voice message handler
     app.add_handler(MessageHandler(filters.VOICE & _PRIVATE, voice_handler))
 
-    # Free-text handler — must be last (catch-all)
+    # Free-text handler (the agent) — must be last (catch-all)
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND & _PRIVATE, message_handler)
     )

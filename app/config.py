@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     default_currency: str = "INR"
     timezone: str = "Asia/Kolkata"
     rate_limit_per_minute: int = 20
+    agent_max_steps: int = 5  # LLM calls per message, including the final reply
+    agent_history_turns: int = 6  # earlier messages the agent remembers per user
+    agent_history_ttl_minutes: int = 15  # history is forgotten after this idle time
     frankfurter_api_url: str = "https://api.frankfurter.dev/v1"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_sql: bool = False  # log every SQL statement and its parameters

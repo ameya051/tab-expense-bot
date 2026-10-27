@@ -17,6 +17,7 @@ from telegram.warnings import PTBUserWarning
 from app.bot.handlers.common import esc
 from app.config import settings
 from app.database import AsyncSessionLocal
+from app.formatting import currency_change_note
 from app.services import user_service
 from app.services.currency_service import (
     CurrencyConversionError,
@@ -189,20 +190,6 @@ async def _apply_currency(user_id: int, code: str) -> str:
     return _finish_message(code, result)
 
 
-def _conversion_note(result: CurrencyChangeResult) -> str:
-    """Describe what a currency change converted, or '' if nothing was."""
-    if not result.rates:
-        return ""
-    rate_text = ", ".join(
-        f"1 {src} = {rate:,.4f} {result.new_currency}" for src, rate in result.rates.items()
-    )
-    count = result.expenses_converted
-    return (
-        f"🔁 Converted {count} expense{'s' if count != 1 else ''}, "
-        f"your budgets and recurring expenses ({rate_text}).\n\n"
-    )
-
-
 def _finish_message(code: str, result: CurrencyChangeResult | None = None) -> str:
     """Build the onboarding completion message."""
     flags = {
@@ -210,7 +197,7 @@ def _finish_message(code: str, result: CurrencyChangeResult | None = None) -> st
         "JPY": "🇯🇵", "CAD": "🇨🇦", "AUD": "🇦🇺", "CHF": "🇨🇭",
     }
     flag = flags.get(code, "🌍")
-    note = _conversion_note(result) if result else ""
+    note = currency_change_note(result) if result else ""
 
     return (
         f"✅ Your default currency is now <b>{code}</b> {flag}\n\n"
@@ -219,7 +206,9 @@ def _finish_message(code: str, result: CurrencyChangeResult | None = None) -> st
         "• <i>spent 500 on groceries</i>\n"
         "• <i>200 cab yesterday</i>\n"
         "• <i>lunch 150</i>\n\n"
-        "📊 <b>Commands:</b>\n"
+        "Or just ask: <i>how much this week?</i>, <i>set my food budget to 5000</i>, "
+        "<i>export last month</i>, <i>delete that</i>.\n\n"
+        "📊 <b>Shortcuts:</b>\n"
         "/summary — Monthly category breakdown\n"
         "/report — Spending trend over time\n"
         "/budget — Set category budgets\n"

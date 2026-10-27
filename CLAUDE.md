@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A personal Telegram expense-tracking bot. Users type or speak things like "spent 500 on groceries"; an LLM (via OpenRouter) turns the text into a JSON intent, Pydantic validates it, and async SQLAlchemy stores it in PostgreSQL. Also: charts, budgets with alerts, recurring expenses, multi-currency with live FX, CSV export.
+A personal Telegram expense-tracking bot. Users type or speak things like "spent 500 on groceries" or "set my food budget to 5000"; an LLM agent (via OpenRouter, tool calling) picks and chains tools, Pydantic validates their arguments, and async SQLAlchemy stores the result in PostgreSQL. Also: charts, budgets with alerts, recurring expenses, multi-currency with live FX, CSV export.
 
 ## Commands
 
@@ -21,7 +21,7 @@ docker compose restart app                             # reload doesn't always n
 
 Without Docker: `uvicorn app.main:app --reload` from a venv with `MODE=polling` (no public HTTPS needed) and a reachable `DATABASE_URL`.
 
-- **Tests:** there is no test suite. To check logic, run one-off scripts with `docker compose exec -T app python - <<'EOF' ... EOF`. For date logic, patch `local_today` in the module under test.
+- **Tests:** there is no test suite. To check logic, run one-off scripts with `docker compose exec -T app python - <<'EOF' ... EOF`. For date logic, patch `local_today` in the module under test. To test the agent loop without the network, replace `AgentRunner.client` with a stub whose `chat.completions.create` returns scripted messages (`content`, `tool_calls`).
 - **Lint:** ruff is used ad hoc (it isn't pinned in requirements): `ruff check app`. Broad `except Exception` blocks carry `# noqa: BLE001` with a reason.
 
 ## Architecture
@@ -37,22 +37,36 @@ Order matters:
 - **group -1:** group-chat refusal. Raises `ApplicationHandlerStop` for anything that isn't a private chat.
 - **group 0:**
   - the onboarding `ConversationHandler` (`/start`, `/settings`, `/skip`)
-  - commands
+  - commands, and the button callbacks (`cancel_recurring:`, `agent_confirm:`/`agent_cancel:`)
   - voice
-  - free text, which is the catch-all and **must stay last**
+  - free text (the agent), which is the catch-all and **must stay last**
 
 Data handlers use the `_PRIVATE` filter (`ChatType.PRIVATE & UpdateType.MESSAGE`). Edited messages have `update.message=None` and would crash the handlers.
 
 ### Layers
-- **Handlers** ([app/bot/handlers/](app/bot/handlers/), [onboarding.py](app/bot/onboarding.py)) are the only code that knows Telegram.
+- **Handlers** ([app/bot/handlers/](app/bot/handlers/), [onboarding.py](app/bot/onboarding.py)) and [render.py](app/bot/render.py) are the only code that knows Telegram.
+- **Tools** ([app/agent/tools/](app/agent/tools/)) are the application layer between handlers and services. They validate arguments, call services, and return a `ToolResult`: `data` for the LLM and `outputs` (`TextOut`/`PhotoOut`/`DocumentOut` from [outputs.py](app/agent/outputs.py)) for the user. They never import `telegram`.
 - **Services** ([app/services/](app/services/)) take an `AsyncSession` and contain the business rules and queries. The scheduler calls them directly.
-- `NLPParser` and `VoiceTranscriber` are built once and stored in `context.bot_data`, not module globals.
+- Slash commands ([commands.py](app/bot/handlers/commands.py)) are thin shortcuts that call `execute_tool` directly, without the LLM.
+- `AgentRunner` and `VoiceTranscriber` are built once and stored in `context.bot_data`, not module globals.
 
-### NLP contract
+### Agent contract
 
-[app/nlp/parser.py](app/nlp/parser.py) sends `SYSTEM_PROMPT_TEMPLATE` in JSON mode. The output is validated against the `ParsedIntent` discriminated union in [app/schemas.py](app/schemas.py) (keyed on `"intent"`). Anything invalid becomes `UnknownIntent`. **Changing an intent or query period means updating the schema, the prompt and the handler** (`_dispatch_intent` / `_handle_query` in [intents.py](app/bot/handlers/intents.py)). For example, query ranges come either from a named `period` resolved in code by `expense_service.resolve_date_range`, or from explicit `start_date`/`end_date` returned by the LLM.
+[app/agent/runner.py](app/agent/runner.py) is a hand-rolled tool-calling loop over the `openai` SDK (no agent framework):
+- Each step sends the system prompt ([prompt.py](app/agent/prompt.py)), recent history and the tool specs. Tool calls run sequentially and their `data` goes back as `tool` messages.
+- If every result in a step is `final` (its outputs already answer the user), the turn ends without another LLM call, so "spent 200 on lunch" costs one call. Results the LLM must phrase (`get_spending`, `show=false` lookups, errors) get a closing call.
+- At most `AGENT_MAX_STEPS` LLM calls; the last one uses `tool_choice="none"`.
+- A tool registered with `writes=True` is not run twice with the same arguments in one turn.
+- A tool with a `confirm` prompt (`change_currency`) isn't run by the LLM. It returns Yes/No buttons, the `PendingAction` is kept in `user_data`, and `agent_confirm_callback` runs it.
+- `run()` never raises. It flags `ai_failed`/`failed` and keeps the outputs produced so far.
 
-Retries are owned by `retry_ai_call`, which uses exponential backoff and doesn't retry permanent errors. The OpenAI clients are created with `max_retries=0` so the SDK's retries don't multiply.
+Tools are registered with `@tool(...)` in [registry.py](app/agent/registry.py), and their argument models live in [app/schemas.py](app/schemas.py). Argument validation errors go back to the LLM so it can correct itself. **Adding a capability means an args model, a tool, and (if needed) a line in the prompt.** `user_id` and the currency come from `ToolContext`, never from tool arguments. Each tool opens its own session; never hold one across an LLM call.
+
+Date ranges use the shared `DateRangeArgs`: a named `period` resolved by `expense_service.resolve_date_range`, or explicit `start_date`/`end_date`. See `resolve_range`/`period_label` in [tools/reports.py](app/agent/tools/reports.py).
+
+Memory ([memory.py](app/agent/memory.py)) is the last `AGENT_HISTORY_TURNS` turns in PTB `user_data`, dropped after `AGENT_HISTORY_TTL_MINUTES` idle. It is in-process only. Turns for one user are serialised with a per-user lock in [handlers/agent.py](app/bot/handlers/agent.py).
+
+Retries are owned by `retry_ai_call` ([app/nlp/ai.py](app/nlp/ai.py)), which uses exponential backoff and doesn't retry permanent errors. The OpenAI clients are created with `max_retries=0` so the SDK's retries don't multiply.
 
 ### Money invariants
 - Every stored amount (`expenses.amount`, `recurring_expenses.amount`, `budgets.monthly_limit`) is in the **user's `preferred_currency`**. Recurring expenses and budgets have **no currency column**.
@@ -66,13 +80,13 @@ Retries are owned by `retry_ai_call`, which uses exponential backoff and doesn't
 Use `app.timeutils.today()` / `now()`, never `date.today()`. Everything shares one configured `TIMEZONE`: "today", month boundaries for budgets and summaries, the date in the LLM prompt, and the midnight scheduler. Weeks start on Monday.
 
 ### Replies
-- Most replies use `parse_mode="HTML"`, so **escape all user- or LLM-derived text with `esc()`**.
+- Most replies use `parse_mode="HTML"`, so **escape all user- or LLM-derived text with `esc()`** ([app/formatting.py](app/formatting.py)). `TextOut.html` is HTML; the agent's final reply is plain text and is escaped before sending.
 - Use `reply_chunked` for anything that can exceed 4096 characters.
-- After an expense is committed, later failures (recurring setup, budget checks) must add a warning line rather than "something went wrong". Otherwise users retry and log the expense twice.
+- After an expense is committed, later failures (recurring setup, budget checks, the AI failing on a later step) must add a warning line rather than "something went wrong". Otherwise users retry and log the expense twice. `_turn_outputs` in [handlers/agent.py](app/bot/handlers/agent.py) applies this to whole turns using `AgentTurn.wrote`.
 
 ### Charts
 
-[app/reports/charts.py](app/reports/charts.py) uses the matplotlib `Figure` API, because `pyplot` global state isn't thread-safe. Always call it through `render_chart()` in [common.py](app/bot/handlers/common.py), which runs it in a threadpool and logs it.
+[app/reports/charts.py](app/reports/charts.py) uses the matplotlib `Figure` API, because `pyplot` global state isn't thread-safe. Always call it through `render_chart()` in [app/reports/render.py](app/reports/render.py), which runs it in a threadpool and logs it.
 
 ### Recurring scheduler
 

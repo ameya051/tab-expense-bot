@@ -194,14 +194,12 @@ async def get_category_total(
 
 @log_call
 async def get_recent(
-    db: AsyncSession, user_id: int, limit: int = 5
+    db: AsyncSession, user_id: int, limit: int = 5, category: str | None = None
 ) -> list[Expense]:
-    """Return the N most recent expenses."""
-    stmt = (
-        select(Expense)
-        .where(Expense.user_id == user_id)
-        .order_by(Expense.date.desc(), Expense.created_at.desc())
-        .limit(limit)
-    )
+    """Return the N most recent expenses, optionally only in one category."""
+    stmt = select(Expense).where(Expense.user_id == user_id)
+    if category:
+        stmt = stmt.where(Expense.category == category.lower())
+    stmt = stmt.order_by(Expense.date.desc(), Expense.created_at.desc()).limit(limit)
     result = await db.execute(stmt)
     return list(result.scalars().all())
