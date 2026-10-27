@@ -11,6 +11,7 @@ from app.bot.handlers.common import (
     esc,
     format_amount,
     get_preferred_currency,
+    recurring_schedule_text,
     render_chart,
     reply_chunked,
     send_photo_bytes,
@@ -263,19 +264,19 @@ async def _handle_log_expense(
     # Handle recurring
     if intent.recurring:
         try:
-            await recurring_service.create_recurring(
+            recurring = await recurring_service.create_recurring(
                 db,
                 user_id=user_id,
                 amount=float(expense.amount),
                 category=expense.category,
                 description=expense.description,
-                day_of_month=expense.date.day,
+                frequency=intent.recurring_frequency,
+                start_date=expense.date,
             )
-            day = expense.date.day
-            suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
-            parts.append(
-                f"🔄 Marked as recurring! I'll auto-log this on the {day}{suffix} of every month."
+            schedule = recurring_schedule_text(
+                recurring.frequency, recurring.day_of_month, recurring.next_run_date
             )
+            parts.append(f"🔄 Marked as recurring! I'll auto-log this {schedule}.")
         except Exception:
             logger.exception("Failed to create recurring expense for user_id=%s", user_id)
             await db.rollback()

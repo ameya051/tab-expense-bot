@@ -80,6 +80,7 @@ Use `app.timeutils.today()` / `now()`, never `date.today()`. Everything shares o
 - It runs once at startup to catch up, then every local midnight.
 - It runs under a Postgres advisory lock, so only one worker processes recurring expenses.
 - `recurring_service.log_occurrence` inserts the expense and advances `next_run_date` in one `SELECT … FOR UPDATE` transaction. It only proceeds if `next_run_date` still equals the expected date.
+- `frequency` (`daily` / `weekly` / `monthly`) drives `recurring_service.compute_next_run_date`. `day_of_month` is set only for monthly rows; it keeps the anchor day so month-end clamping doesn't drift (31st → Feb 28 → Mar 31).
 
 ### Lifespan
 

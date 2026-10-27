@@ -13,6 +13,7 @@ from app.bot.handlers.common import (
     esc,
     format_amount,
     get_preferred_currency,
+    recurring_schedule_text,
     render_chart,
     reply_chunked,
     send_photo_bytes,
@@ -305,7 +306,9 @@ async def recurring_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await update.message.reply_text(
                 "🔄 No recurring expenses set.\n\n"
                 "To create one, log an expense and mention it's recurring:\n"
-                "• <i>spent 500 on Netflix, it's a monthly subscription</i>",
+                "• <i>spent 500 on Netflix, it's a monthly subscription</i>\n"
+                "• <i>1500 for the cleaner every week</i>\n"
+                "• <i>200 on coffee every day</i>",
                 parse_mode="HTML",
             )
             return
@@ -315,10 +318,13 @@ async def recurring_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             emoji = tables._get_emoji(entry.category)
             desc = f" — {esc(entry.description)}" if entry.description else ""
             next_date = entry.next_run_date.strftime("%b %d")
+            schedule = recurring_schedule_text(
+                entry.frequency, entry.day_of_month, entry.next_run_date
+            )
             lines.append(
                 f"{i}. {emoji} {esc(entry.category.title())} · "
                 f"{format_amount(float(entry.amount), pref_currency)}{desc}\n"
-                f"   Next: {next_date} · Monthly"
+                f"   Next: {next_date} · {schedule[0].upper()}{schedule[1:]}"
             )
 
         reply_markup = build_cancel_recurring_keyboard(entries)

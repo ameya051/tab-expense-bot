@@ -20,6 +20,9 @@ def is_storable_amount(amount: float) -> bool:
     return math.isfinite(amount) and 0.01 <= round(amount, 2) <= MAX_AMOUNT
 
 
+RecurringFrequency = Literal["daily", "weekly", "monthly"]
+
+
 class LogExpenseIntent(BaseModel):
     """Structured result when the user wants to log an expense."""
 
@@ -30,6 +33,8 @@ class LogExpenseIntent(BaseModel):
     date: date
     description: str | None = None
     recurring: bool = False
+    # Required key: the LLM must state it every time (null when not recurring).
+    recurring_frequency: RecurringFrequency | None
 
     @field_validator("amount")
     @classmethod
@@ -37,6 +42,19 @@ class LogExpenseIntent(BaseModel):
         if not is_storable_amount(value):
             raise ValueError("amount must be between 0.01 and 99,999,999.99")
         return value
+
+    @field_validator("recurring_frequency", mode="before")
+    @classmethod
+    def _lowercase_frequency(cls, value: Any) -> Any:
+        return value.lower() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _recurring_needs_frequency(self) -> LogExpenseIntent:
+        # Never guess a schedule: a recurring expense without an explicit
+        # frequency is rejected (and becomes UnknownIntent in the parser).
+        if self.recurring and self.recurring_frequency is None:
+            raise ValueError("recurring_frequency is required when recurring is true")
+        return self
 
 
 class QueryIntent(BaseModel):
