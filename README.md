@@ -1,6 +1,6 @@
 # 💰 Expense Tracker Bot
 
-A personal Telegram bot for tracking expenses using natural language, powered by OpenAI models via OpenRouter for NLP parsing and PostgreSQL for storage.
+A personal Telegram bot for tracking expenses using natural language, powered by an LLM agent (via OpenRouter) that picks tools to act on what you say, and PostgreSQL for storage.
 
 ## Quick Start
 
@@ -106,6 +106,16 @@ Talk to your bot in natural language:
 | "how much this week?" | Shows total spending |
 | "show my top categories" | Category breakdown chart |
 | "last 5 expenses" | Lists recent expenses |
+| "delete that" / "delete the coffee one" | Deletes an expense |
+| "set my food budget to 5000" | Sets a budget |
+| "am I over budget?" | Answers from your budgets |
+| "netflix 649 every month" / "cancel netflix" | Creates or cancels a recurring expense |
+| "export my expenses from September" | Sends a CSV |
+| "switch my currency to USD" | Asks you to confirm, then converts everything |
+
+One message can do several things ("log 300 groceries and tell me my total this month"), and the bot remembers the last few messages, so follow-ups like "delete that" work.
+
+Slash commands remain as shortcuts that skip the LLM.
 
 ### Commands
 
@@ -120,7 +130,7 @@ Talk to your bot in natural language:
 
 - **Bot:** python-telegram-bot v21
 - **Backend:** FastAPI + Uvicorn
-- **NLP:** OpenRouter API (OpenAI GPT-5.6 Luna)
+- **AI:** tool-calling agent over the OpenRouter API (OpenAI GPT-5.6 Luna), no agent framework
 - **Database:** PostgreSQL + SQLAlchemy (async)
 - **Charts:** matplotlib (server-side PNG)
 

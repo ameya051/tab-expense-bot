@@ -6,7 +6,7 @@ import time
 from openai import AsyncOpenAI
 
 from app.logging_setup import summarize
-from app.nlp.parser import AIUnavailableError, retry_ai_call
+from app.nlp.ai import AIUnavailableError, retry_ai_call
 
 logger = logging.getLogger(__name__)
 
