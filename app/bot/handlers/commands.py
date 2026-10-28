@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from app.agent import memory
 from app.agent.outputs import TextOut
 from app.agent.registry import ToolContext, execute_tool
 from app.bot.handlers.common import ensure_user, get_preferred_currency
@@ -57,6 +58,8 @@ async def _run_command_tool(
     try:
         ctx = ToolContext(user_id=user_id, pref_currency=await get_preferred_currency(user_id))
         result = await execute_tool(name, args, ctx)
+        if result.pending is not None:
+            memory.store_pending(context.user_data, result.pending)
         await send_outputs(update.message, result.outputs or [TextOut(SOMETHING_WRONG_MESSAGE)])
     except Exception:
         logger.exception("Error in /%s (%s)", update.message.text.split()[0].lstrip("/"), name)

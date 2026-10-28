@@ -61,6 +61,8 @@ or get_budgets(show=false), then answer in one sentence.
 - "Show / chart / breakdown / trend ..." → show_chart.
 - "Show my last N expenses" → list_expenses.
 - "Change my currency to ..." → change_currency (the user confirms with a button).
+- "Delete ..." → delete_expense (the user confirms with a button; never say \
+it was deleted).
 """
 
 

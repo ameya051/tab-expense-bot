@@ -3,7 +3,7 @@
 import logging
 
 from app.agent.outputs import TextOut
-from app.agent.registry import ToolContext, ToolResult, error_result, tool
+from app.agent.registry import Confirmation, ToolContext, ToolResult, error_result, tool
 from app.database import AsyncSessionLocal
 from app.formatting import currency_change_note
 from app.schemas import ChangeCurrencyArgs
@@ -13,11 +13,11 @@ from app.services.currency_service import CurrencyConversionError, is_supported_
 logger = logging.getLogger(__name__)
 
 
-def _confirm_change(ctx: ToolContext, args: ChangeCurrencyArgs) -> str | None:
+async def _confirm_change(ctx: ToolContext, args: ChangeCurrencyArgs) -> Confirmation | None:
     """Ask before converting every stored amount; no question if nothing would change."""
     if args.new_currency == ctx.pref_currency or not is_supported_currency(args.new_currency):
         return None
-    return (
+    return Confirmation(
         f"💱 Switch your currency from <b>{ctx.pref_currency}</b> to "
         f"<b>{args.new_currency}</b>?\n\n"
         "I'll convert all your expenses, budgets and recurring expenses at today's rate."

@@ -57,7 +57,7 @@ Data handlers use the `_PRIVATE` filter (`ChatType.PRIVATE & UpdateType.MESSAGE`
 - If every result in a step is `final` (its outputs already answer the user), the turn ends without another LLM call, so "spent 200 on lunch" costs one call. Results the LLM must phrase (`get_spending`, `show=false` lookups, errors) get a closing call.
 - At most `AGENT_MAX_STEPS` LLM calls; the last one uses `tool_choice="none"`.
 - A tool registered with `writes=True` is not run twice with the same arguments in one turn.
-- A tool with a `confirm` prompt (`change_currency`) isn't run by the LLM. It returns Yes/No buttons, the `PendingAction` is kept in `user_data`, and `agent_confirm_callback` runs it.
+- A tool with a `confirm` prompt (`change_currency`, `delete_expense`) isn't run by the LLM. It returns Yes/No buttons, the `PendingAction` is kept in `user_data`, and `agent_confirm_callback` runs it. The prompt is async and returns a `Confirmation`, whose `args` can pin the stored arguments (e.g. "the last expense" → its id). Slash commands store pending actions too, so `/delete` also asks.
 - `run()` never raises. It flags `ai_failed`/`failed` and keeps the outputs produced so far.
 
 Tools are registered with `@tool(...)` in [registry.py](app/agent/registry.py), and their argument models live in [app/schemas.py](app/schemas.py). Argument validation errors go back to the LLM so it can correct itself. **Adding a capability means an args model, a tool, and (if needed) a line in the prompt.** `user_id` and the currency come from `ToolContext`, never from tool arguments. Each tool opens its own session; never hold one across an LLM call.

@@ -3,7 +3,7 @@
 import logging
 
 from app.agent.outputs import TextOut
-from app.agent.registry import ToolContext, ToolResult, tool
+from app.agent.registry import Confirmation, ToolContext, ToolResult, tool
 from app.database import AsyncSessionLocal
 from app.formatting import esc, format_amount, recurring_schedule_text
 from app.logging_setup import summarize
@@ -219,12 +219,34 @@ async def _budget_alert_lines(
     return lines
 
 
+async def _confirm_delete(ctx: ToolContext, args: DeleteExpenseArgs) -> Confirmation | None:
+    """Ask before deleting, naming the expense; no question if there is nothing to delete."""
+    async with AsyncSessionLocal() as db:
+        if args.expense_id is not None:
+            expense = await expense_service.get_expense(db, ctx.user_id, args.expense_id)
+        else:
+            expense = await expense_service.get_last_expense(db, ctx.user_id)
+    if expense is None:
+        return None
+
+    date_str = expense.date.strftime("%b %d")
+    desc = f" — {esc(expense.description)}" if expense.description else ""
+    return Confirmation(
+        f"🗑️ Delete <b>{format_amount(float(expense.amount), expense.currency)}</b> "
+        f"for {esc(expense.category)} on {date_str}{desc}?",
+        # Pin the id, so "the last one" can't become a newer expense before Yes.
+        DeleteExpenseArgs(expense_id=expense.id),
+    )
+
+
 @tool(
     "delete_expense",
     "Delete one expense: the given expense_id, or the most recently logged one "
-    "if expense_id is omitted. Shows the user what was deleted.",
+    "if expense_id is omitted. The user is asked to confirm with a button "
+    "before anything is deleted.",
     DeleteExpenseArgs,
     writes=True,
+    confirm=_confirm_delete,
 )
 async def delete_expense(ctx: ToolContext, args: DeleteExpenseArgs) -> ToolResult:
     async with AsyncSessionLocal() as db:

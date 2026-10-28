@@ -74,13 +74,12 @@ async def add_expense(
 
 
 # ---------------------------------------------------------------------------
-# Delete
+# Read one
 # ---------------------------------------------------------------------------
 
 @log_call
-async def delete_last_expense(db: AsyncSession, user_id: int) -> Expense | None:
-    """Delete the user's most recent expense. Returns the deleted row or None."""
-    # Find the most recent expense
+async def get_last_expense(db: AsyncSession, user_id: int) -> Expense | None:
+    """The user's most recently logged expense, or None."""
     stmt = (
         select(Expense)
         .where(Expense.user_id == user_id)
@@ -88,8 +87,27 @@ async def delete_last_expense(db: AsyncSession, user_id: int) -> Expense | None:
         .limit(1)
     )
     result = await db.execute(stmt)
-    expense = result.scalar_one_or_none()
+    return result.scalar_one_or_none()
 
+
+@log_call
+async def get_expense(db: AsyncSession, user_id: int, expense_id: int) -> Expense | None:
+    """One expense by ID (scoped to user), or None."""
+    stmt = select(Expense).where(
+        Expense.id == expense_id, Expense.user_id == user_id
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+# ---------------------------------------------------------------------------
+# Delete
+# ---------------------------------------------------------------------------
+
+@log_call
+async def delete_last_expense(db: AsyncSession, user_id: int) -> Expense | None:
+    """Delete the user's most recent expense. Returns the deleted row or None."""
+    expense = await get_last_expense(db, user_id)
     if expense is None:
         return None
 
@@ -103,12 +121,7 @@ async def delete_expense_by_id(
     db: AsyncSession, user_id: int, expense_id: int
 ) -> Expense | None:
     """Delete a specific expense by ID (scoped to user). Returns the deleted row or None."""
-    stmt = select(Expense).where(
-        Expense.id == expense_id, Expense.user_id == user_id
-    )
-    result = await db.execute(stmt)
-    expense = result.scalar_one_or_none()
-
+    expense = await get_expense(db, user_id, expense_id)
     if expense is None:
         return None
 

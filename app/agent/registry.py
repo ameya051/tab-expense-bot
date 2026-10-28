@@ -52,10 +52,22 @@ class ToolResult:
     pending: PendingAction | None = None
 
 
+@dataclass(frozen=True)
+class Confirmation:
+    """The HTML question to ask before running a tool.
+
+    args, if set, replaces the arguments kept for the Yes button, e.g. to pin
+    "the last expense" to a concrete id so a later expense can't take its place.
+    """
+
+    question: str
+    args: BaseModel | None = None
+
+
 ToolRun = Callable[[ToolContext, Any], Awaitable[ToolResult]]
-# Returns the HTML question to ask before running, or None if no confirmation
-# is needed for these arguments.
-ConfirmPrompt = Callable[[ToolContext, Any], str | None]
+# Returns the question to ask before running, or None if no confirmation is
+# needed for these arguments.
+ConfirmPrompt = Callable[[ToolContext, Any], Awaitable[Confirmation | None]]
 
 
 @dataclass(frozen=True)
@@ -152,19 +164,23 @@ async def run_tool(
     failing tool doesn't end the whole turn.
     """
     if tool_def.confirm is not None and not confirmed:
-        question = tool_def.confirm(ctx, args)
-        if question is not None:
+        try:
+            confirmation = await tool_def.confirm(ctx, args)
+        except Exception:  # reported to the LLM instead of failing the turn
+            logger.exception("confirm for %s(%s) failed", tool_def.name, summarize(args))
+            return error_result("internal error while preparing the confirmation")
+        if confirmation is not None:
             pending = PendingAction(
                 token=secrets.token_hex(6),
                 tool=tool_def.name,
-                args=args.model_dump(mode="json"),
+                args=(confirmation.args or args).model_dump(mode="json"),
             )
             logger.info("tool %s needs confirmation token=%s", tool_def.name, pending.token)
             return ToolResult(
                 data={"status": "waiting for the user to confirm with the buttons shown"},
                 outputs=[
                     TextOut(
-                        question,
+                        confirmation.question,
                         buttons=[[
                             Button("✅ Yes", f"agent_confirm:{pending.token}"),
                             Button("✖️ No", f"agent_cancel:{pending.token}"),
